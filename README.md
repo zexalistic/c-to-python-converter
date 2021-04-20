@@ -35,7 +35,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 #### How to edit config.json
 You want to wrap the function *hello_world* in **Samples\main.c**. That function is defined in **Samples\main.h** and the related file is in **Samples\sample.h**. You complied your C files and put the result in **Samples\samples.dll**. Thus, you need to write below in config.json:
 > "dll_path": "Samples\\\samples.dll",
-"h_files_to_parse": ["Samples\\\*.h"],
+"h_files_to_wrap": ["Samples\\\main.h"],
 
 If some functions are defined in Samples\main.c, you need to add:
 > "c_files_to_wrap": ["Samples\\\main.c"],
@@ -43,7 +43,7 @@ If some functions are defined in Samples\main.c, you need to add:
 This is optional, so it is commented by default. Functions only defined in header files are preferred.
 
 You opened **main.h** and found there are customized variable types *MY_BOOL* and *MY_INT*. They are defined in **Samples\sample.h**. Thus, you need to write below in config.json:
-> "h_files_to_wrap": ["Samples\\\sample.h"],
+> "h_files_to_parse": ["Samples\\\sample.h"],
 
 You found there is a prefix before function *hello_world* and there is no prefix before *hello_world_2*. This prefix is usually necessary as a sign to export the function to dll files. Thus, you need to add this prefix in config.json; leave it blank if there is no prefix.
 > "func_header": "FUNC_PREFIX",
