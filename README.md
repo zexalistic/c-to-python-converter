@@ -29,6 +29,9 @@ This wrapper is an interface to wrap those C function into a python function.
 #### For more Information
 About what can be parsed, see the comments in Sample\sample.h.
 
+This blog introduces how to use python ctypes:
+https://www.cnblogs.com/night-ride-depart/p/4907613.html
+
 ## Detailed User Guide 
 #### How to edit config.json
 You want to wrap the function *hello_world* in Samples\main.c. That function is defined in **Samples\main.h**. You complied your C files and put the result in **Samples\samples.dll**. Thus, you need to write below in config.json:
