@@ -21,8 +21,7 @@ This wrapper is an interface to wrap those C function into a python function.
 2. Do not support nested citation. e.g. the parameter of a function pointer is another function pointer
 3. Only support simplest macros like this: #define VAR_NAME 1
 4. Parameter of function can not be void...
-5. Only support typedef enum. not support direct definition of enum type.
-6. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
+5. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
  
 
 #### For more Information

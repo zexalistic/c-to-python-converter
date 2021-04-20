@@ -2,6 +2,7 @@ from structure_class import *
 
 APILib = CDLL("sample\sample.dll")
 
+
 def hello_world(something):
     """
     :param something: member from enumerate class MY_BOOL

@@ -14,3 +14,9 @@ class WEEKDAYS(IntEnum):
     FRI = 3
 
 
+@unique
+class MONTHS(IntEnum):
+    JAN = 0
+    FEB = 1
+
+

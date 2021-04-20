@@ -356,14 +356,36 @@ class EnumParser(CommonParser):
         """
         for h_file in self.h_files:
             with open(h_file) as fp:
-                contents = fp.read()
-                contents = rm_c_comments(contents)
-                contents = re.findall(r'typedef enum[^;]+;', contents)  # find all enumerate types
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
                 for content in contents:
                     enum = self._Enum()
                     tmp = re.split(r'[{}]', content)  # split the typedef enum{ *** } name;
                     enum_infos = re.sub(r'\s', '', tmp[1])
                     enum.enum_name = re.sub(r'[\s;]', '', tmp[2])
+                    enum_infos = enum_infos.split(',')
+                    enum_infos = list(filter(None, enum_infos))
+                    for default_value, enum_info in enumerate(enum_infos):
+                        if '=' in enum_info:
+                            enum_member = enum_info.split('=')[0]
+                            enum_value = enum_info.split('=')[1]
+                            if enum_value.startswith('0x'):
+                                enum_value = int(enum_value, 16)
+                        else:
+                            enum_member = enum_info
+                            enum_value = default_value
+                        enum.enum_members.append(enum_member)
+                        enum.enum_values.append(enum_value)
+
+                    self.enum_class_list.append(enum)
+                    self.enum_class_name_list.append(enum.enum_name)
+
+                contents = re.findall(r'enum\s+(\w+)\s*\{([^{}]+)\};', lines)
+                for content in contents:
+                    enum = self._Enum()
+                    enum.enum_name = content[0]
+                    enum_infos = re.sub(r'\s', '', content[1])
                     enum_infos = enum_infos.split(',')
                     enum_infos = list(filter(None, enum_infos))
                     for default_value, enum_info in enumerate(enum_infos):
@@ -500,7 +522,7 @@ class FunctionParser(CommonParser):
         else:
             with open(self.wrapper, 'w') as fp:
                 fp.write('from structure_class import *\n\n')
-                fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n')
+                fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n\n')
 
         for func in self.func_list:
             if self.is_multiple_file:
