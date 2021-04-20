@@ -1,6 +1,6 @@
 from structure_class import *
 
-APILib = CDLL("Samples\samples.dll")
+APILib = CDLL("sample\sample.dll")
 
 def hello_world(something):
     """

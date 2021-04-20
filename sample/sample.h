@@ -44,13 +44,17 @@ typedef MY_INT (*MY_FUNC_PTR)(				// Parsable
 	MY_STRUCT_PTR p
 	);
 
-union _MY_UNION{                            // Parsable
-    int a;
-    char b;
-    double c;
-}
+union YOUR_UNION {                            // Parsable
+	int a;
+	char b;
+	double c;
+};
 
-typedef union
+typedef union _MY_UNION {					 // Parsable
+	int a;
+	char b;
+	double c;
+} MY_UNION;
 
 typedef struct _DEV {						// Parsable
 	MY_FUNC_PTR func_p;

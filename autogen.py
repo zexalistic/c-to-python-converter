@@ -1,7 +1,5 @@
 # automatically generate Cpython wrapper file according to header files
 # Created by Yihao Liu on 2021/3/5
-# TODO: Add Union
-# TODO： add enum
 
 import glob
 import os
@@ -89,16 +87,16 @@ class CommonParser:
         return arg_type, arg_ptr_flag
 
 
-class StructParser(CommonParser):
+class StructUnionParser(CommonParser):
     """
-    Parse the header files in the folder. Catch the enum types and sort them into enum_class.py
+    Parse the header files in the folder. Get the structure and Unions
     """
     def __init__(self):
         super().__init__()
 
     class _Struct:
         """
-        A class recording the name, member and type of a class
+        A class recording the name, member and type of a structure/union
         """
         def __init__(self):
             self.struct_name = None                         # string
@@ -106,19 +104,26 @@ class StructParser(CommonParser):
             self.struct_types = list()                      # list of string/ctypes
             self.pointer_flags = list()                     # list of bool
             self.member_idc = list()                        # list of integer
+            self.isUnion = False                            # structure = False, Union = True
 
         def __getitem__(self, item):
             return self.struct_members[item], self.struct_types[item], self.struct_types[item], self.member_idc[item]
 
-    def generate_struct_class_list(self):
+    def generate_struct_union_class_list(self):
         # parse header files
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                contents = re.findall(r'typedef struct ([\s\w]+)\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
-                for content in contents:
+                structs = re.findall(r'typedef struct ([\s\w]+)\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                struct_flags = [False] * len(structs)
+                unions = re.findall(r'typedef union ([\s\w]+)\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                union_flags = [True] * len(unions)
+                contents = structs + unions
+                flags = struct_flags + union_flags
+                for content, flag in zip(contents, flags):
                     struct = self._Struct()
+                    struct.isUnion = flag
                     struct_name = re.sub(r'\s', '', content[2])
                     if re.search(r',\s*\*', struct_name):
                         struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
@@ -153,9 +158,15 @@ class StructParser(CommonParser):
                     self.struct_class_list.append(struct)
                     self.struct_class_name_list.append(struct.struct_name)
 
-                contents = re.findall(r'struct\s*([\w]+)\s*\{([^}]+)?\}\s*;', lines)  # match: struct _a{};
-                for content in contents:
+                structs = re.findall(r'struct\s*([\w]+)\s*\{([^}]+)?\}\s*;', lines)  # match: struct _a{};
+                struct_flags = [False] * len(structs)
+                unions = re.findall(r'union\s*([\w]+)\s*\{([^}]+)?\}\s*;', lines)  # match: struct _a{};
+                union_flags = [True] * len(unions)
+                contents = structs + unions
+                flags = struct_flags + union_flags
+                for content, flag in zip(contents, flags):
                     struct = self._Struct()
+                    struct.isUnion = flag
                     struct_name = re.sub(r'\s', '', content[0])
                     struct.struct_name = struct_name
                     struct_infos = content[1].split(';')
@@ -289,19 +300,34 @@ class StructParser(CommonParser):
         with open('structure_class.py', 'w') as fp:
             fp.write('from ctypes import *\n\n\n')
             for struct in self.struct_class_list:
-                fp.write(f'class {struct.struct_name}(Structure):\n    _fields_ = [')
-                info_list = []
-                for member, struct_type, pointer_flag, idx in zip(struct.struct_members, struct.struct_types, struct.pointer_flags, struct.member_idc):
-                    # check void
-                    if pointer_flag:
-                        struct_type = f'POINTER({struct_type})'
-                    if idx:
-                        info = '("' + f'{member}' + '", ' + f'{struct_type} * {idx}' + ')'
-                    else:
-                        info = '("' + f'{member}' + '", ' + f'{struct_type}' + ')'
-                    info_list.append(info)
-                info_list = ',\n                '.join(info_list)
-                fp.write(f'{info_list}]\n\n\n')
+                if struct.isUnion:
+                    fp.write(f'class {struct.struct_name}(Union):\n    _fields_ = [')
+                    info_list = []
+                    for member, struct_type, pointer_flag, idx in zip(struct.struct_members, struct.struct_types, struct.pointer_flags, struct.member_idc):
+                        # check void
+                        if pointer_flag:
+                            struct_type = f'POINTER({struct_type})'
+                        if idx:
+                            info = '("' + f'{member}' + '", ' + f'{struct_type} * {idx}' + ')'
+                        else:
+                            info = '("' + f'{member}' + '", ' + f'{struct_type}' + ')'
+                        info_list.append(info)
+                    info_list = ',\n                '.join(info_list)
+                    fp.write(f'{info_list}]\n\n\n')
+                else:
+                    fp.write(f'class {struct.struct_name}(Structure):\n    _fields_ = [')
+                    info_list = []
+                    for member, struct_type, pointer_flag, idx in zip(struct.struct_members, struct.struct_types, struct.pointer_flags, struct.member_idc):
+                        # check void
+                        if pointer_flag:
+                            struct_type = f'POINTER({struct_type})'
+                        if idx:
+                            info = '("' + f'{member}' + '", ' + f'{struct_type} * {idx}' + ')'
+                        else:
+                            info = '("' + f'{member}' + '", ' + f'{struct_type}' + ')'
+                        info_list.append(info)
+                    info_list = ',\n                '.join(info_list)
+                    fp.write(f'{info_list}]\n\n\n')
 
 
 class EnumParser(CommonParser):
@@ -614,14 +640,14 @@ class FunctionParser(CommonParser):
                     fp.write('\n')
 
 
-class TypeParser(StructParser, EnumParser, FunctionParser):
+class TypeUnionParser(StructUnionParser, EnumParser, FunctionParser):
     """
     Parse the header files in the include path and store the customized variable types in python format.
     Store the parsing result in enum_class.py (typedef enumerate) and structure_class.py (typedef structure)
     Store the macros in a dictionary
     """
     def __init__(self):
-        StructParser.__init__(self)
+        StructUnionParser.__init__(self)
         EnumParser.__init__(self)
         FunctionParser.__init__(self)
 
@@ -653,7 +679,7 @@ class TypeParser(StructParser, EnumParser, FunctionParser):
         self.generate_enum_class_list()
         self.generate_macro_dict()
         self.generate_func_ptr_dict()
-        self.generate_struct_class_list()
+        self.generate_struct_union_class_list()
         self.convert_structure_class_to_ctype()
 
     def write_to_file(self):
@@ -721,7 +747,7 @@ class TypeParser(StructParser, EnumParser, FunctionParser):
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
-    parser = TypeParser()
+    parser = TypeUnionParser()
     parser()
 
     from enum_class import *

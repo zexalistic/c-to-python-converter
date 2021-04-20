@@ -1,9 +1,9 @@
 {
 	"#": "====================================================You have to check and change these variables for new wrappers(Mandatory)=================================================================",
-	"dll_path": "Samples\\samples.dll",
-	"h_files_to_parse": ["Samples\\main.h"],
-	"#c_files_to_wrap": ["Samples\\main.c"],
-	"h_files_to_wrap": ["Samples\\sample.h"],
+	"dll_path": "sample\\sample.dll",
+	"h_files_to_parse": ["sample\\*.h"],
+	"#c_files_to_wrap": ["sample\\main.c"],
+	"h_files_to_wrap": ["sample\\sample.h"],
 	"func_header": "FUNC_PREFIX",
 	"#func_param_decorator": "IN|OUT|INOUT",
 

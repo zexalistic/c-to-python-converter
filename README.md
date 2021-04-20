@@ -19,11 +19,10 @@ This wrapper is an interface to wrap those C function into a python function.
 #### Limitation
 1. Do not support #ifdef #endif...
 2. Do not support nested citation. e.g. the parameter of a function pointer is another function pointer
-3. Do not support union at present...
-4. Only support simplest macros like this: #define VAR_NAME 1
-5. Parameter of function can not be void...
-6. Only support typedef enum. not support direct definition of enum type.
-7. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
+3. Only support simplest macros like this: #define VAR_NAME 1
+4. Parameter of function can not be void...
+5. Only support typedef enum. not support direct definition of enum type.
+6. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
  
 
 #### For more Information
@@ -34,9 +33,9 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ## Detailed User Guide 
 #### How to edit config.json
-You want to wrap the function *hello_world* in Samples\main.c. That function is defined in **Samples\main.h**. You complied your C files and put the result in **Samples\samples.dll**. Thus, you need to write below in config.json:
+You want to wrap the function *hello_world* in **Samples\main.c**. That function is defined in **Samples\main.h** and the related file is in **Samples\sample.h**. You complied your C files and put the result in **Samples\samples.dll**. Thus, you need to write below in config.json:
 > "dll_path": "Samples\\\samples.dll",
-"h_files_to_parse": ["Samples\\\main.h"],
+"h_files_to_parse": ["Samples\\\*.h"],
 
 If some functions are defined in Samples\main.c, you need to add:
 > "c_files_to_wrap": ["Samples\\\main.c"],
