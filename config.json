@@ -6,11 +6,6 @@
 	"h_files_to_wrap": ["sample\\main.h"],
 	"func_header": "FUNC_PREFIX",
 	"#func_param_decorator": "IN|OUT|INOUT",
-
-	"basic_type_dict": {"int8_t": "c_int8", "int16_t": "c_int16", "int32_t": "c_int32", "int64_t": "c_int64", "uint8_t": "c_uint8", "uint16_t": "c_uint16", "uint32_t": "c_uint32",
-		                "uint64_t": "c_uint64", "unsigned int": "c_uint", "int": "c_int", "float": "c_float", "double": "c_double", "char": "c_char", "const char": "c_char",
-		                "unsigned char": "c_ubyte",
-		                "MY_INT": "c_int"},
 	"exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
 
 	"#": "====================================================It is ok if you don't change these variables (Optional)==================================================================================",

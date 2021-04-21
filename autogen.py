@@ -1,6 +1,8 @@
 # automatically generate Cpython wrapper file according to header files
 # Created by Yihao Liu on 2021/3/5
 
+# TODO: singloton
+
 import glob
 import os
 import re
@@ -24,9 +26,80 @@ def rm_c_comments(lines):
     return lines
 
 
+class BasicTypeParser:
+    """
+    Parse basic C types such as int, double etc. , and customized types such as U32 (equal to uint32_t)
+    """
+    def __init__(self):
+        self.h_files = list()                           # list of header files
+        self.c_files = list()                           # list of C files to parse
+
+        # Read from json
+        with open('config.json', 'r') as fp:
+            self.env = json.load(fp)
+        self.basic_type_dict = self.env.get('basic_type_dict', dict())
+
+        self.type_map_tree = dict()                                                 # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'float', 'double', 'char', 'unsigned char']
+        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte']
+        for key in self.keys:
+            self.type_map_tree[key] = list()
+
+    def __call__(self):
+        """
+        Main function when you use this parser
+        """
+        h_files_to_parse = self.env.get('h_files_to_parse', ['*.h'])
+        for file_path in h_files_to_parse:
+            self.h_files.extend(glob.glob(file_path))
+
+        self.generate_basic_type_dict()
+        self.write_basic_type_dict_from_tree()
+
+        return self.basic_type_dict
+
+    def generate_basic_type_dict(self):
+        # Add common types
+        self.type_map_tree['int'].append('void')
+        self.type_map_tree['char'].append('const char')
+
+        # parse header files
+        for h_file in self.h_files:
+            with open(h_file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                contents = re.findall(f'typedef\s+([\w\s]+)\s+(\w+);', lines)
+                for content in contents:
+                    original_type = content[0].strip()
+                    customized_type = content[1]
+                    if not self.search_tree(original_type, customized_type):
+                        if 'struct' in original_type:
+                            pass
+                        else:
+                            logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
+                                            f'or this is a nested calling which we do not support\n')
+
+    def search_tree(self, node, value):
+        if node in self.keys:
+            self.type_map_tree[node].append(value)
+            return node
+        else:
+            for key in self.keys:
+                if node in self.type_map_tree[key]:
+                    self.type_map_tree[key].append(value)
+                    return key
+            return None             # Not found any of this type
+
+    def write_basic_type_dict_from_tree(self):
+        for key, key_ctype in zip(self.keys, self.key_ctypes):
+            self.basic_type_dict[key] = key_ctype
+            for node in self.type_map_tree[key]:
+                self.basic_type_dict[node] = key_ctype
+
+
 class CommonParser:
     """
-    Parent class for all parser
+    Base class for all parser
     """
     def __init__(self):
         self.h_files = list()                           # list of header files
@@ -39,11 +112,11 @@ class CommonParser:
         self.exception_list = list()                    # list of keys in exception dict
         self.struct_class_list = list()                 # list of structure
 
-
         # Read from json
         with open('config.json', 'r') as fp:
             self.env = json.load(fp)
-        self.basic_type_dict = self.env.get('basic_type_dict', dict())
+        basic_type_parser = BasicTypeParser()
+        self.basic_type_dict = basic_type_parser()
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
 
@@ -662,7 +735,7 @@ class FunctionParser(CommonParser):
                     fp.write('\n')
 
 
-class TypeUnionParser(StructUnionParser, EnumParser, FunctionParser):
+class Parser(StructUnionParser, EnumParser, FunctionParser):
     """
     Parse the header files in the include path and store the customized variable types in python format.
     Store the parsing result in enum_class.py (typedef enumerate) and structure_class.py (typedef structure)
@@ -703,6 +776,7 @@ class TypeUnionParser(StructUnionParser, EnumParser, FunctionParser):
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
         self.convert_structure_class_to_ctype()
+        pass
 
     def write_to_file(self):
         """
@@ -769,7 +843,7 @@ class TypeUnionParser(StructUnionParser, EnumParser, FunctionParser):
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
-    parser = TypeUnionParser()
+    parser = Parser()
     parser()
 
     from enum_class import *

@@ -52,9 +52,6 @@ Some hardware engineers prefer to add an empty macro before function parameters 
  If any, you need to declare them in config.json. If not, just ignore. This is commented by default.
  > "func_param_decorator": "IN|OUT|INOUT",
 
-Since *typedef int MY_INT;* is not parsed (This is a limitation of my parser), you need to manually add these definations in config.json. I have aleady written some common types, so you need to append it as in samples:
-> 	"basic_type_dict": {"int8_t": "c_int8", "int16_t": "c_int16", "int32_t": "c_int32", "int64_t": "c_int64", "uint8_t": "c_uint8", "uint16_t": "c_uint16", "uint32_t": "c_uint32", "uint64_t": "c_uint64", "unsigned int": "c_uint", "int": "c_int", "float": "c_float", "double": "c_double", "char": "c_char", "const char": "c_char", "unsigned char": "c_ubyte", "MY_INT": "c_int"},  
-
 The device handler in hardware is complex and usually wrapped separatedly, so I leave a special entry for these types. The parser will bypass these types and not recognize them as a common structure pointer. You need to add these types in config.json:
 > "exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
 
