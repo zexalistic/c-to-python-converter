@@ -2,6 +2,9 @@
 # Created by Yihao Liu on 2021/3/5
 
 # TODO: super怎么传参数
+# TODO: ifndef 预处理
+# TODO: h_file parse路径
+# TODO: without func prefix
 
 import glob
 import os
@@ -22,6 +25,33 @@ def rm_c_comments(lines):
     lines = re.sub(m, '', lines)
     m = re.compile(r'/\*.*?\*/', re.S)
     lines = re.sub(m, '', lines)
+
+    return lines
+
+
+def rm_c_precompile(lines):
+    """
+    remove C precompile commands in the file to parse
+    """
+    m = re.compile(r'#if.*')
+    lines = re.sub(m, '', lines)
+    m = re.compile(r'#undef.*')
+    lines = re.sub(m, '', lines)
+    m = re.compile(r'#else.*')
+    lines = re.sub(m, '', lines)
+
+    return lines
+
+
+def rm_c_macros(lines):
+    """
+    remove C precompile commands in the file to parse
+    """
+    m = re.compile(r'#define.*')
+    lines = re.sub(m, '', lines)
+    m = re.compile(r'typedef.*')
+    lines = re.sub(m, '', lines)
+
 
     return lines
 
@@ -191,21 +221,21 @@ class StructUnionParser(CommonParser):
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                structs = re.findall(r'typedef struct ([\s\w]+)\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                structs = re.findall(r'typedef struct[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 struct_flags = [False] * len(structs)
-                unions = re.findall(r'typedef union ([\s\w]+)\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                unions = re.findall(r'typedef union[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 union_flags = [True] * len(unions)
                 contents = structs + unions
                 flags = struct_flags + union_flags
                 for content, flag in zip(contents, flags):
                     struct = self._Struct()
                     struct.isUnion = flag
-                    struct_name = re.sub(r'\s', '', content[2])
+                    struct_name = re.sub(r'\s', '', content[1])
                     if re.search(r',\s*\*', struct_name):
                         struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
                         self.struct_pointer_dict[struct_pointer_name] = struct_name
                     struct.struct_name = struct_name
-                    struct_infos = content[1].split(';')
+                    struct_infos = content[0].split(';')
                     for struct_info in struct_infos:
                         struct_info = struct_info.strip()                                                  # This is necessary
                         tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)                        # parse the members of structure
@@ -533,6 +563,8 @@ class FunctionParser(CommonParser):
             with open(h_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
+                # contents = rm_c_precompile(contents)
+                # contents = rm_c_macros(contents)
                 # This pattern matching rule may have bugs in other cases
                 if self.func_header:
                     contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
@@ -565,6 +597,8 @@ class FunctionParser(CommonParser):
             with open(c_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
+                contents = rm_c_precompile(contents)
+                contents = rm_c_macros(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*\{', contents)  # find all functions
                 for content in contents:

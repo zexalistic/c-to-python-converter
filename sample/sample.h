@@ -60,5 +60,7 @@ typedef struct _DEV {						// Parsable
 	MY_FUNC_PTR func_p;
 } DEV, *DEV_PTR;
 
-// We do not support Union
+typedef struct {						   // Parsable
+	MY_FUNC_PTR func_p;
+} DEV2, * DEV2_PTR;
 
