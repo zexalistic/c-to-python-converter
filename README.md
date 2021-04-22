@@ -1,20 +1,20 @@
-## Generate C to python wrapper automatically
-This tool mainly focus on generating ctypes python wrapper on embedded C project.
-The major idea of this tool is to parse header/C files and grasp the definition of functions and customized variable types, then rewrite them in Ctypes style.
+## Automatically converting C code to python using ctypes lib
 
 #### How to use
 + Build dll files(Optional, if you want to run testcases)
 + Edit config.json
 + Run autogen.py
++ Python APIs are in wrapper.py
 
 #### Output
 + wrapper.py : the python wrapper of C functions written in ctypes style
-+ Testcase_all.py: simple auto-generated testcases templates. You had better check it before running.
++ Testcase_all.py: simple auto-generated testcases templates.
 
-#### How to use Ctypes Wrapper
-You need to compile the C project and generate a dynamic lib(.dll in windows).
-Cpython support loading dll files while running C and will call the C function according to its name.
-This wrapper is an interface to wrap those C function into a python function.
+#### Brief introduction of ctypes
+ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
+from C project and use ctypes.CDLL to call those C functions. Since the data structure in C and python are 
+different, you need a wrapper as an interface to make the API more "pythonic". That's why I develop this 
+wrapper auto-generator.
 
 #### Limitation
 1. Do not support #ifdef #endif...
@@ -59,6 +59,9 @@ In a real project of the author, the dictionary is:
 >"exception_dict": {"MCESD_DEV_PTR": "c_void_p", "MZD_PVOID": "c_void_p", "MZD_DEV_PTR":  "c_void_p", "Device_Handle_t": "c_void_p"},
 
 Other parameters in config.json are optional to change. You can see the comments in config.json.
+
+#### Notice
+Function prefix is necessary in the current version... Anyway, you need that function prefix to generate the dll files... 
 
 #### How to run
 Open an IDE and run autogen.py. Watch the logs to check if there are any errors. If not, everything is done.
