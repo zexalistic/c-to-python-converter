@@ -1,7 +1,7 @@
 # automatically generate Cpython wrapper file according to header files
 # Created by Yihao Liu on 2021/3/5
 
-# TODO: singloton
+# TODO: super怎么传参数
 
 import glob
 import os
@@ -115,8 +115,7 @@ class CommonParser:
         # Read from json
         with open('config.json', 'r') as fp:
             self.env = json.load(fp)
-        basic_type_parser = BasicTypeParser()
-        self.basic_type_dict = basic_type_parser()
+        self.basic_type_dict = self.env.get('basic_type_dict', dict())
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
 
@@ -158,6 +157,10 @@ class CommonParser:
         else:
             logging.warning(f'Unrecognized type! Type name: {arg_type}')
         return arg_type, arg_ptr_flag
+
+    def get_basic_type_dict(self):
+        basic_type_parser = BasicTypeParser()
+        self.basic_type_dict = basic_type_parser()
 
 
 class StructUnionParser(CommonParser):
@@ -771,6 +774,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         """
         Parse the header files
         """
+        self.get_basic_type_dict()
         self.generate_enum_class_list()
         self.generate_macro_dict()
         self.generate_func_ptr_dict()

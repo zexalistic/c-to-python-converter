@@ -13,20 +13,7 @@
 	"name_of_testcase": "Testcases_all.py",
 	"name_of_testcase_template": "testcase_template.py",
 	"is_multiple_file" : false,
-	"func_pointer_dict": {},
 
 	"#": "===============================================================Comment for this script=======================================================================================================",
-	"#": "@dll_path: the path of your DLL file generated from C code",
-	"#": "@func_param_decorator: decorator of parameter of function, e.g. int main(IN int a). If not, just remove or comment that parameter",
-	"#": "@h_files_to_wrap: List of names of header files where the definition of C functions that we are going to wrap exists. e.g.['*.h','main.h'](Remember to substitute single quote with double quote)",
-	"#": "@c_files_to_wrap: List of names of C files where the definition of C functions that we are going to wrap exists. e.g.['*.c','main.c'](Remember to substitute single quote with double quote)",
-	"#": "@h_files_to_parse: List of names of header files where the definition of customized C variables exists. e.g.['*.c','main.c'](Remember to substitute single quote with double quote)",
-	"#": "@func_header: the header of functions indicating it is a function. We only parse function with func headers. e.g. FUNC_HEADER int function(void);",
-	"#": "@is_multiple_file: write all wrappers in one file or in multiple files",
-	"#": "@func_pointer_dict: dictionary of function pointer. This is a backup interface, for the script automatically parse function pointers.",
-	"#": "                    Sample: {'MZD_FUNC_WAIT': 'c_void_p, c_uint'}.(Remember to substitute single quote with double quote)",
-	"#": "@basic_type_dict: dictionary of basic C types except for types of pointers.",
-	"#": "@exception_dict: dictionary of some customized C types which are exceptions while parse.E.g. The device handler is a structure pointer in C, however, ",
-	"#": "                 we prefer to regard it as a void pointer and load the device with C code instead of python. \",",
-	"#": "                 We keep these varibales in exception_dict so that we will ignore the fact that these variables are structure pointers but a void pointer while writing the wrapper."
+	"#": "@is_multiple_file: write all wrappers in one file or in multiple files"
 }
