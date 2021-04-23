@@ -141,6 +141,7 @@ class CommonParser:
         self.enum_class_name_list = list()
         self.exception_list = list()                    # list of keys in exception dict
         self.struct_class_list = list()                 # list of structure
+        self.empty_macro_list = list()
 
         # Read from json
         with open('config.json', 'r') as fp:
@@ -153,7 +154,7 @@ class CommonParser:
         """
         A class recording the information of the parameter of a C function
         """
-        def __init__(self, param_info=(None, None, None)):      # param_info sample: IN MZD_U8 Var_name
+        def __init__(self, param_info=(None, None)):      # param_info sample: MZD_U8 Var_name
             self.arg_pointer_flag = False
             arg_info = list()
             for info in param_info:
@@ -162,9 +163,8 @@ class CommonParser:
                     info = re.sub(r'[\[\]*]', '', info)
                 arg_info.append(info)
 
-            self.arg_inout = arg_info[0]                 # IN/ OUT
-            self.arg_type = arg_info[1].strip()
-            self.arg_name = arg_info[2]
+            self.arg_type = arg_info[0].strip()
+            self.arg_name = arg_info[1]
 
     def convert_to_ctypes(self, arg_type, arg_ptr_flag):
         """
@@ -191,6 +191,20 @@ class CommonParser:
     def get_basic_type_dict(self):
         basic_type_parser = BasicTypeParser()
         self.basic_type_dict = basic_type_parser()
+
+    def get_empty_macro(self):
+        for h_file in self.h_files:
+            with open(h_file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                empty_macro_list = re.findall(r'#define\s+(\w+)\s*\n', lines)
+                self.empty_macro_list += empty_macro_list
+
+    def rm_empty_macro(self, lines):
+        for item in self.empty_macro_list:
+            lines = re.sub(r'([^\w]){}([^\w])'.format(item), r'\1\2', lines)
+
+        return lines
 
 
 class StructUnionParser(CommonParser):
@@ -221,6 +235,7 @@ class StructUnionParser(CommonParser):
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
+                lines = self.rm_empty_macro(lines)
                 structs = re.findall(r'typedef struct[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 struct_flags = [False] * len(structs)
                 unions = re.findall(r'typedef union[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
@@ -464,6 +479,7 @@ class EnumParser(CommonParser):
             with open(h_file) as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
+                lines = self.rm_empty_macro(lines)
                 contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
                 for content in contents:
                     enum = self._Enum()
@@ -531,7 +547,6 @@ class FunctionParser(CommonParser):
         self.dll_path = self.env.get('dll_path', 'samples.dll')
         self.testcase = self.env.get('name_of_testcase', 'Testcases_all.py')  # Output testcase
         self.func_header = self.env.get('func_header', False)
-        self.func_param_decorator = self.env.get('func_param_decorator', False)
         self.is_multiple_file = self.env.get('is_multiple_file', False)
 
     class _Func:
@@ -563,8 +578,7 @@ class FunctionParser(CommonParser):
             with open(h_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
-                # contents = rm_c_precompile(contents)
-                # contents = rm_c_macros(contents)
+                contents = self.rm_empty_macro(contents)
                 # This pattern matching rule may have bugs in other cases
                 if self.func_header:
                     contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
@@ -581,11 +595,7 @@ class FunctionParser(CommonParser):
                     param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
                     param_infos = param_infos.split(',')
                     for param_info in param_infos:
-                        if self.func_param_decorator:
-                            param_info = re.search(r'({})\s+([*\w\s]+)\s+([\[\]*\w]+)'.format(self.func_param_decorator), param_info).groups()
-                        else:
-                            param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
-                            param_info = (None, *param_info)
+                        param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
                         param = self._Param(param_info=param_info)
                         param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
                         func.parameters.append(param)
@@ -597,8 +607,7 @@ class FunctionParser(CommonParser):
             with open(c_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
-                contents = rm_c_precompile(contents)
-                contents = rm_c_macros(contents)
+                contents = self.rm_empty_macro(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*\{', contents)  # find all functions
                 for content in contents:
@@ -613,7 +622,7 @@ class FunctionParser(CommonParser):
                     param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
                     param_infos = param_infos.split(',')
                     for param_info in param_infos:
-                        param_info = re.search(r'({})\s+([*\w\s]+)\s+([\[\]*\w]+)'.format(self.func_param_decorator), param_info).groups()
+                        param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
                         param = self._Param(param_info=param_info)
                         param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
                         func.parameters.append(param)
@@ -809,6 +818,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         Parse the header files
         """
         self.get_basic_type_dict()
+        self.get_empty_macro()
         self.generate_enum_class_list()
         self.generate_macro_dict()
         self.generate_func_ptr_dict()
@@ -846,6 +856,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
             with open(h_file, 'r') as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
+                contents = self.rm_empty_macro(contents)
                 m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
                 contents = re.findall(m, contents)
                 for content in contents:            # For each function pointer
@@ -865,7 +876,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
                     key = content[1]
                     args = re.findall(r'([\w*]+)\s+([*\w[\[\]]+)?', content[2])
                     for arg in args:                # For each parameter
-                        param_info = tuple([None]) + arg
+                        param_info = arg
                         param = self._Param(param_info=param_info)
                         param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
                         if param.arg_type in self.enum_class_name_list:

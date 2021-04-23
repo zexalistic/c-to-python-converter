@@ -5,6 +5,10 @@ class DEV(Structure):
     _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, c_void_p))]
 
 
+class DEV2(Structure):
+    _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, c_void_p))]
+
+
 class MY_UNION(Union):
     _fields_ = [("a", c_int),
                 ("b", c_char),

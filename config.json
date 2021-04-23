@@ -5,7 +5,6 @@
 	"#c_files_to_wrap": ["sample\\main.c"],
 	"h_files_to_wrap": ["sample\\main.h"],
 	"func_header": "FUNC_PREFIX",
-	"#func_param_decorator": "IN|OUT|INOUT",
 	"exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
 
 	"#": "====================================================It is ok if you don't change these variables (Optional)==================================================================================",

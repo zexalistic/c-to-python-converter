@@ -44,13 +44,9 @@ This is optional, so it is commented by default. Functions only defined in heade
 You opened **main.h** and found there are customized variable types *MY_BOOL* and *MY_INT*. They are defined in **Samples\sample.h**. Thus, you need to write below in config.json:
 > "h_files_to_parse": ["Samples\\\sample.h"],
 
-You found there is a prefix before function *hello_world* and there is no prefix before *hello_world_2*. This prefix is usually necessary as a sign to export the function to dll files. Thus, you need to add this prefix in config.json; leave it blank if there is no prefix.
+A prefix is usually necessary when you want to export the function to dll files. Thus, we use this as a sign to distinguish the C functions you want to wrap. 
+You need to write the prefix in config.json. In **main.h**, the prefix is *FUNC_PREFIX*:
 > "func_header": "FUNC_PREFIX",
-
-Some hardware engineers prefer to add an empty macro before function parameters to map a real pin. E.g. 
- FUNC_PREFIX MY_INT hello_world(IN MY_BOOL something);
- If any, you need to declare them in config.json. If not, just ignore. This is commented by default.
- > "func_param_decorator": "IN|OUT|INOUT",
 
 The device handler in hardware is complex and usually wrapped separatedly, so I leave a special entry for these types. The parser will bypass these types and not recognize them as a common structure pointer. You need to add these types in config.json:
 > "exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
@@ -61,7 +57,9 @@ In a real project of the author, the dictionary is:
 Other parameters in config.json are optional to change. You can see the comments in config.json.
 
 #### Notice
-Function prefix is necessary in the current version... Anyway, you need that function prefix to generate the dll files... 
+Function prefix is necessary in the current version... Though this is a critical limitation...
+
+Anyway, you need that function prefix to generate the dll files.
 
 #### How to run
 Open an IDE and run autogen.py. Watch the logs to check if there are any errors. If not, everything is done.
