@@ -31,6 +31,9 @@ wrapper auto-generator.
 About what can be parsed, see the comments in Sample\sample.h.
 Support the conversion of strucuture, union, enumerate, typedef... which already meets the need of common project.
 
+Python Ctypes document:
+https://docs.python.org/3/library/ctypes.html
+
 This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
