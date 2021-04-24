@@ -1,11 +1,6 @@
 # automatically generate Cpython wrapper file according to header files
 # Created by Yihao Liu on 2021/3/5
 
-# TODO: super怎么传参数
-# TODO: ifndef 预处理
-# TODO: h_file parse路径
-# TODO: without func prefix
-
 import glob
 import os
 import re
@@ -70,8 +65,8 @@ class BasicTypeParser:
         self.basic_type_dict = self.env.get('basic_type_dict', dict())
 
         self.type_map_tree = dict()                                                 # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
-        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'float', 'double', 'char', 'unsigned char']
-        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte']
+        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t']
+        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t']
         for key in self.keys:
             self.type_map_tree[key] = list()
 
