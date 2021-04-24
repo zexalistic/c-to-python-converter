@@ -1,7 +1,6 @@
 ## Automatically converting C code to python using ctypes lib
 
 #### How to use
-+ Build dll files(Optional, if you want to run testcases)
 + Edit config.json
 + Run autogen.py
 + Python APIs are in wrapper.py
@@ -17,15 +16,20 @@ different, you need a wrapper as an interface to make the API more "pythonic". T
 wrapper auto-generator.
 
 #### Limitation
-1. Do not support #ifdef #endif...
-2. Do not support nested citation. e.g. the parameter of a function pointer is another function pointer
-3. Only support simplest macros like this: #define VAR_NAME 1
-4. Parameter of function can not be void...
+1. Do not parse preprocessor commands such as #ifdef #endif.
+2. Do not support nested citation or definition. e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d. 
+3. Only support simplest macros like this: #define VAR_NAME 1/ #define IN 
+4. Parameter of function can not be void. I regard it as 'int' at present version.
 5. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
  
+#### TO-DO List in next version
+1. Parsing most of the macros
+2. Parsing other preprocessor commands
+3. Add void type
 
 #### For more Information
 About what can be parsed, see the comments in Sample\sample.h.
+Support the conversion of strucuture, union, enumerate, typedef... which already meets the need of common project.
 
 This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
