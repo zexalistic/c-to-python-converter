@@ -12,6 +12,8 @@
 
 #define OUT
 
+#define MIN 2
+
 #define THIS 1\
  +\
   3;
@@ -78,3 +80,15 @@ typedef struct {						   // Parsable
 	MY_FUNC_PTR func_p;
 } DEV2, * DEV2_PTR;
 
+int arr[2][MIN] =
+{
+    {1 , 2},
+    {MAX, MIN}
+};
+
+int arr2[3][MIN] =
+{
+    {1 , 2},
+    {MAX, MIN},
+    {3, 4},
+};

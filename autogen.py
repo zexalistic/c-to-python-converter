@@ -114,6 +114,7 @@ class CommonParser:
         self.enum_class_list = list()
         self.exception_list = list()                    # list of keys in exception dict
         self.struct_class_list = list()                 # list of structure
+        self.array_list = list()                        # list of large C arrays
 
         self.macro_dict = dict()  # key = name of macro, value = value of macro
 
@@ -376,6 +377,10 @@ class StructUnionParser(CommonParser):
                     except Exception:
                         traceback.print_exc()
                         logging.error(f'Unrecognized macro: {idx}... {struct.struct_name}')
+
+                else:
+                    # This is not an array
+                    pass
 
                 if struct.struct_name not in self.exception_list:
                     struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
@@ -766,15 +771,63 @@ class FunctionParser(CommonParser):
                     fp.write('\n')
 
 
-class Parser(StructUnionParser, EnumParser, FunctionParser):
+class ArrayParser(CommonParser):
+    def __init__(self):
+        super().__init__()
+
+    class _Array:
+        """
+        A class recording the information of the contents of a large C array
+        """
+        def __init__(self):
+            self.arr_name = None                # string
+            self.arr_idc = list()                # list of array indices
+            self.arr_val = list()               # list of the whole array matrix
+
+    def generate_array_list(self):
+        """
+        Write large array in C to py
+        """
+        for h_file in self.h_files:
+            with open(h_file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                lines = self.replace_macro(lines)
+                contents = re.findall(r'\w+\s+(\w+)\s*(\[.*\])\s*=([^;]+);', lines)
+                for content in contents:
+                    arr = self._Array()
+                    arr.arr_name = content[0]
+                    # parsing the array indices
+                    idcs = re.findall(r'\[([\d\s*/+\-()]+)?\]', content[1])
+                    for idc in idcs:
+                        try:
+                            arr.arr_idc.append(str(eval(idc)))
+                        except Exception:
+                            traceback.print_exc()
+                            logging.error(f'Unrecognized expression in C array: {content[0]}{content[1]}')
+                    arr.arr_val = re.sub(r'\{', '[', content[2].strip())
+                    arr.arr_val = re.sub(r'}', ']', arr.arr_val)
+                    self.array_list.append(arr)
+
+    def write_arr_into_py(self):
+        if self.array_list:
+            with open('c_arrays.py', 'w') as fp:
+                for arr in self.array_list:
+                    arr_idc = '*'.join(arr.arr_idc)
+                    fp.write(f'# Array size: {arr_idc}\n')
+                    fp.write(f'{arr.arr_name} = {arr.arr_val}\n\n')
+
+
+class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
     """
     Parse the header files in the include path and store the customized variable types in python format.
     Store the parsing result in enum_class.py (typedef enumerate) and structure_class.py (typedef structure)
     Store the macros in a dictionary
     """
     def __init__(self):
-        StructUnionParser.__init__(self)
-        EnumParser.__init__(self)
+        # StructUnionParser.__init__(self)
+        # EnumParser.__init__(self)
+        # ArrayParser.__init__(self)
         FunctionParser.__init__(self)
 
     def __call__(self):
@@ -786,6 +839,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
             self.h_files.extend(glob.glob(file_path))
 
         self.parse()
+
         self.write_to_file()
 
         h_files_to_wrap = self.env.get('h_files_to_wrap', ['*.h'])
@@ -809,6 +863,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
         self.convert_structure_class_to_ctype()
+        self.generate_array_list()
 
     def write_to_file(self):
         """
@@ -816,16 +871,17 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         """
         self.write_enum_class_into_py()
         self.write_structure_class_into_py()
+        self.write_arr_into_py()
 
     def generate_func_ptr_dict(self):
         # parse header files
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
-                contents = fp.read()
-                contents = rm_c_comments(contents)
-                contents = self.replace_macro(contents)
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                lines = self.replace_macro(lines)
                 m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
-                contents = re.findall(m, contents)
+                contents = re.findall(m, lines)
                 for content in contents:            # For each function pointer
                     val = list()
                     ret_type = content[0]
