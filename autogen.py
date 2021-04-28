@@ -21,32 +21,10 @@ def rm_c_comments(lines):
     m = re.compile(r'/\*.*?\*/', re.S)
     lines = re.sub(m, '', lines)
 
-    return lines
-
-
-def rm_c_precompile(lines):
     """
-    remove C precompile commands in the file to parse
+    remove backslash at the end of each line
     """
-    m = re.compile(r'#if.*')
-    lines = re.sub(m, '', lines)
-    m = re.compile(r'#undef.*')
-    lines = re.sub(m, '', lines)
-    m = re.compile(r'#else.*')
-    lines = re.sub(m, '', lines)
-
-    return lines
-
-
-def rm_c_macros(lines):
-    """
-    remove C precompile commands in the file to parse
-    """
-    m = re.compile(r'#define.*')
-    lines = re.sub(m, '', lines)
-    m = re.compile(r'typedef.*')
-    lines = re.sub(m, '', lines)
-
+    lines = re.sub(r'\\\n', '', lines)
 
     return lines
 
@@ -131,12 +109,13 @@ class CommonParser:
         self.c_files = list()                           # list of C files to parse
 
         self.struct_pointer_dict = dict()               # key = name of struct pointer, value = name of struct
-        self.macro_dict = dict()                        # key = name of macro, value = value of macro
         self.struct_class_name_list = list()            # name list of structure class
         self.enum_class_name_list = list()
+        self.enum_class_list = list()
         self.exception_list = list()                    # list of keys in exception dict
         self.struct_class_list = list()                 # list of structure
-        self.empty_macro_list = list()
+
+        self.macro_dict = dict()  # key = name of macro, value = value of macro
 
         # Read from json
         with open('config.json', 'r') as fp:
@@ -144,6 +123,7 @@ class CommonParser:
         self.basic_type_dict = self.env.get('basic_type_dict', dict())
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
+        self.func_header = self.env.get('func_header', '__declspec(dllexport)')
 
     class _Param:
         """
@@ -187,19 +167,42 @@ class CommonParser:
         basic_type_parser = BasicTypeParser()
         self.basic_type_dict = basic_type_parser()
 
-    def get_empty_macro(self):
+    def replace_macro(self, lines):
+        """
+        replace macro in C code with its definition and return the clear C code
+        """
+        lines = re.sub(r'#define\s+.*\n', '', lines)
+        for macro, val in self.macro_dict.items():
+            lines = re.sub(r'\b{}\b'.format(macro), '{}'.format(val), lines)
+
+        return lines
+
+    def get_macro(self):
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                empty_macro_list = re.findall(r'#define\s+(\w+)\s*\n', lines)
-                self.empty_macro_list += empty_macro_list
+                macro_list = re.findall(r'#define\s+(\w+)\b(.*)\n', lines)
+                for item in macro_list:
+                    val = item[1].strip()
+                    if val.startswith('0x'):
+                        try:
+                            self.macro_dict[item[0]] = eval(val)
+                        except Exception:
+                            traceback.print_exc()
+                            logging.error(f'Do not support complex hex compression: #define {item[0]} {val}')
+                    else:
+                        self.macro_dict[item[0]] = val
 
-    def rm_empty_macro(self, lines):
-        for item in self.empty_macro_list:
-            lines = re.sub(r'([^\w]){}([^\w])'.format(item), r'\1\2', lines)
+        # remove func header
+        if self.macro_dict.get(self.func_header):
+            self.macro_dict.pop(self.func_header)
 
-        return lines
+    def extend_macro(self):
+        # regard Enumerate member as macro here
+        for enum in self.enum_class_list:
+            for member, val in zip(enum.enum_members, enum.enum_values):
+                self.macro_dict[member] = str(val)
 
 
 class StructUnionParser(CommonParser):
@@ -230,7 +233,7 @@ class StructUnionParser(CommonParser):
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                lines = self.rm_empty_macro(lines)
+                lines = self.replace_macro(lines)
                 structs = re.findall(r'typedef struct[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 struct_flags = [False] * len(structs)
                 unions = re.findall(r'typedef union[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
@@ -357,11 +360,6 @@ class StructUnionParser(CommonParser):
                     idx = 1
                     member = re.search(r'(\w+)\[.*\]', member).group(1)
                     for expr in expressions:
-                        items = re.findall(r'\w+', expr)
-                        for item in items:
-                            if self.macro_dict.get(item, 0):
-                                # may have bug here.. Do not consider the condition that macro_1 is part of macro_2
-                                expr = re.sub(item, self.macro_dict[item], expr)
                         try:
                             idx = idx * int(eval(expr))
                         except Exception:
@@ -373,11 +371,6 @@ class StructUnionParser(CommonParser):
                         member, idx = re.search(r'(\w+)\[([\s*/\-+\d()]+)\]', member).groups()
                     elif re.search(r'\w+\[([\s*/\-+\d\w]+)\]', member):  # There is a macro within array index
                         member, idx = re.search(r'(\w+)\[([\s*/\-+\d()\w]+)\]', member).groups()
-                        items = re.findall(r'\w+', idx)
-                        for item in items:
-                            if self.macro_dict.get(item, 0):
-                                # may have bug here.. Do not consider the condition that macro_1 is part of macro_2
-                                idx = re.sub(item, self.macro_dict[item], idx)
                     try:
                         idx = int(eval(idx))
                     except Exception:
@@ -452,7 +445,6 @@ class EnumParser(CommonParser):
     """
     def __init__(self):
         super().__init__()
-        self.enum_class_list = list()
 
     class _Enum:
         """
@@ -474,7 +466,7 @@ class EnumParser(CommonParser):
             with open(h_file) as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                lines = self.rm_empty_macro(lines)
+                lines = self.replace_macro(lines)
                 contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
                 for content in contents:
                     enum = self._Enum()
@@ -525,8 +517,8 @@ class EnumParser(CommonParser):
             f.write('from enum import Enum, unique, IntEnum\n\n')
             for enum in self.enum_class_list:
                 f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
-                for member, value in enum:
-                    f.write(f'    {member} = {value}\n')
+                for member, val in enum:
+                    f.write(f'    {member} = {val}\n')
                 f.write('\n\n')
 
 
@@ -541,7 +533,6 @@ class FunctionParser(CommonParser):
         self.wrapper = self.env.get('name_of_wrapper', 'FunctionLib.py')  # Name of Output wrapper
         self.dll_path = self.env.get('dll_path', 'samples.dll')
         self.testcase = self.env.get('name_of_testcase', 'Testcases_all.py')  # Output testcase
-        self.func_header = self.env.get('func_header', False)
         self.is_multiple_file = self.env.get('is_multiple_file', False)
 
     class _Func:
@@ -573,7 +564,7 @@ class FunctionParser(CommonParser):
             with open(h_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
-                contents = self.rm_empty_macro(contents)
+                contents = self.replace_macro(contents)
                 # This pattern matching rule may have bugs in other cases
                 if self.func_header:
                     contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
@@ -602,7 +593,7 @@ class FunctionParser(CommonParser):
             with open(c_file) as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
-                contents = self.rm_empty_macro(contents)
+                contents = self.replace_macro(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*\{', contents)  # find all functions
                 for content in contents:
@@ -702,7 +693,6 @@ class FunctionParser(CommonParser):
         """
         Automatically generate testcases. Since the initial value is usually set at practice. This part is just a draft.
         """
-        #shutil.copyfile('testcase_template.py', self.testcase)
         self.write_testcase_header()
 
         basic_type_list = ['c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_int', 'c_float', 'c_double', 'c_char']
@@ -813,13 +803,12 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         Parse the header files
         """
         self.get_basic_type_dict()
-        self.get_empty_macro()
+        self.get_macro()
         self.generate_enum_class_list()
-        self.generate_macro_dict()
+        self.extend_macro()
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
         self.convert_structure_class_to_ctype()
-        pass
 
     def write_to_file(self):
         """
@@ -828,34 +817,17 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
         self.write_enum_class_into_py()
         self.write_structure_class_into_py()
 
-    def generate_macro_dict(self):
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                contents = fp.read()
-                contents = rm_c_comments(contents)
-                m = re.compile(r'#define\s(\w+)\s+(0x[0-9a-fA-F]+|\d+)')
-                contents = re.findall(m, contents)
-                for content in contents:
-                    if content[1].startswith('0x'):
-                        self.macro_dict[content[0]] = int(content[1], 16)
-                    else:
-                        self.macro_dict[content[0]] = content[1]
-
-        for enum in self.enum_class_list:
-            for member, value in zip(enum.enum_members, enum.enum_values):
-                self.macro_dict[member] = str(value)
-
     def generate_func_ptr_dict(self):
         # parse header files
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 contents = fp.read()
                 contents = rm_c_comments(contents)
-                contents = self.rm_empty_macro(contents)
+                contents = self.replace_macro(contents)
                 m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
                 contents = re.findall(m, contents)
                 for content in contents:            # For each function pointer
-                    value = list()
+                    val = list()
                     ret_type = content[0]
                     if '*' in ret_type:
                         ret_type, ret_pointer_flag = self.convert_to_ctypes(ret_type, True)
@@ -864,9 +836,9 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
                     if ret_type in self.enum_class_name_list:
                         ret_type = 'c_int'
                     if ret_pointer_flag:
-                        value.append(f'POINTER({ret_type})')
+                        val.append(f'POINTER({ret_type})')
                     else:
-                        value.append(f'{ret_type}')
+                        val.append(f'{ret_type}')
 
                     key = content[1]
                     args = re.findall(r'([\w*]+)\s+([*\w[\[\]]+)?', content[2])
@@ -877,11 +849,11 @@ class Parser(StructUnionParser, EnumParser, FunctionParser):
                         if param.arg_type in self.enum_class_name_list:
                             param.arg_type = 'c_int'
                         if param.arg_pointer_flag:
-                            value.append(f'POINTER({param.arg_type})')
+                            val.append(f'POINTER({param.arg_type})')
                         else:
-                            value.append(f'{param.arg_type}')
-                    value = ', '.join(value)
-                    self.func_pointer_dict[key] = value
+                            val.append(f'{param.arg_type}')
+                    val = ', '.join(val)
+                    self.func_pointer_dict[key] = val
 
 
 if __name__ == '__main__':

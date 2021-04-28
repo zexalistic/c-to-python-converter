@@ -8,9 +8,23 @@
 
 #define FUNC_PREFIX __declspec(dllexport)  // This will not be parsed. You can use this macro at the beginning of functions to indicate the functions to wrap.
 
-#define IN							// This will not be parsed
+#define IN							// Parsable
 
-typedef int MY_INT;					// This will not be parsed, you need to write it in config.json
+#define OUT
+
+#define THIS 1\
+ +\
+  3;
+
+#define THESE
+
+#ifndef THAT
+    #define THAT
+#endif
+
+#endif
+
+typedef int MY_INT;					// Parsable
 
 typedef enum {						// Parsable
 	MY_TRUE = 1,
@@ -51,8 +65,8 @@ union YOUR_UNION {                            // Parsable
 };
 
 typedef union _MY_UNION {					 // Parsable
-	int a;
-	char b;
+	IN int a;
+	OUT char b;
 	double c;
 } MY_UNION;
 
