@@ -146,18 +146,18 @@ class CommonParser:
         """
         Convert customized variable type to ctype according to the type dict
         """
-        if self.exception_dict.get(arg_type, 0):
+        if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
-        elif self.basic_type_dict.get(arg_type, 0):
+        elif self.basic_type_dict.__contains__(arg_type):
             arg_type = self.basic_type_dict[arg_type]
         elif arg_type in self.enum_class_name_list:
             pass
         elif arg_type in self.struct_class_name_list:
             pass
-        elif self.struct_pointer_dict.get(arg_type, 0):
+        elif self.struct_pointer_dict.__contains__(arg_type):
             arg_type = self.struct_pointer_dict[arg_type]
             arg_ptr_flag = True
-        elif self.func_pointer_dict.get(arg_type, 0):
+        elif self.func_pointer_dict.__contains__(arg_type):
             arg_type = f'CFUNCTYPE({self.func_pointer_dict[arg_type]})'
             arg_ptr_flag = True
         else:
@@ -187,6 +187,11 @@ class CommonParser:
                 for item in macro_list:
                     val = item[1].strip()
                     if val.startswith('0x'):
+                        if val.endswith('UL'):
+                            val = val[:-2]
+                        elif val.endswith('U') or val.endswith('L'):
+                            val = val[:-1]
+
                         try:
                             self.macro_dict[item[0]] = eval(val)
                         except Exception:
@@ -196,7 +201,7 @@ class CommonParser:
                         self.macro_dict[item[0]] = val
 
         # remove func header
-        if self.macro_dict.get(self.func_header):
+        if self.macro_dict.__contains__(self.func_header):
             self.macro_dict.pop(self.func_header)
 
     def extend_macro(self):
@@ -502,15 +507,19 @@ class EnumParser(CommonParser):
                     enum_infos = re.sub(r'\s', '', content[1])
                     enum_infos = enum_infos.split(',')
                     enum_infos = list(filter(None, enum_infos))
-                    for default_value, enum_info in enumerate(enum_infos):
+                    default_value = 0
+                    for enum_info in enum_infos:
                         if '=' in enum_info:
                             enum_member = enum_info.split('=')[0]
                             enum_value = enum_info.split('=')[1]
                             if enum_value.startswith('0x'):
                                 enum_value = int(enum_value, 16)
+                            default_value = enum_value
                         else:
                             enum_member = enum_info
                             enum_value = default_value
+
+                        default_value += 1
                         enum.enum_members.append(enum_member)
                         enum.enum_values.append(enum_value)
 
