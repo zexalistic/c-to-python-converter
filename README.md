@@ -18,13 +18,12 @@ wrapper auto-generator.
 #### Limitation
 1. Do not support other preprocessor commands except for "#define"
 2. Do not support nested citation or definition. e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
-3. Parameter of function can not be void. I regard it as 'int' at present version.
-4. Parenthesis may affect the parsing result, e.g. ((a)) may have a different parsing result with a
+3. Regard all 'void' as 'int' at present version.
+4. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
  
 #### TO-DO List in next version
-1. Add void type and other c types
-2. Write better testcases
+1. Write better testcases
 
 #### For more Information
 About what can be parsed, see the comments in Sample\sample.h.

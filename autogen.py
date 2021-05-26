@@ -5,7 +5,6 @@ import glob
 import os
 import re
 import logging
-import time
 import traceback
 import json
 import shutil
@@ -42,9 +41,11 @@ class BasicTypeParser:
             self.env = json.load(fp)
         self.basic_type_dict = self.env.get('basic_type_dict', dict())
 
-        self.type_map_tree = dict()                                                 # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
-        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t']
-        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t']
+        self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'long long',
+                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
+        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_longlong',
+                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
         for key in self.keys:
             self.type_map_tree[key] = list()
 
@@ -240,9 +241,9 @@ class StructUnionParser(CommonParser):
                 lines = fp.read()
                 lines = rm_c_comments(lines)
                 lines = self.replace_macro(lines)
-                structs = re.findall(r'typedef struct[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                structs = re.findall(r'typedef struct[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 struct_flags = [False] * len(structs)
-                unions = re.findall(r'typedef union[\s\w]*\{([^{}]+)\}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+                unions = re.findall(r'typedef union[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
                 union_flags = [True] * len(unions)
                 contents = structs + unions
                 flags = struct_flags + union_flags
@@ -283,9 +284,9 @@ class StructUnionParser(CommonParser):
                     self.struct_class_list.append(struct)
                     self.struct_class_name_list.append(struct.struct_name)
 
-                structs = re.findall(r'struct\s*([\w]+)\s*\{([^}]+)?\}\s*;', lines)  # match: struct _a{};
+                structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
                 struct_flags = [False] * len(structs)
-                unions = re.findall(r'union\s*([\w]+)\s*\{([^}]+)?\}\s*;', lines)  # match: struct _a{};
+                unions = re.findall(r'union\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
                 union_flags = [True] * len(unions)
                 contents = structs + unions
                 flags = struct_flags + union_flags
@@ -362,9 +363,9 @@ class StructUnionParser(CommonParser):
                 idx = 0
                 # check if member is array
                 if '][' in member:    # high order array
-                    expressions = re.findall(r'\[([\w\s*/+\-()]+)?\]', member)
+                    expressions = re.findall(r'\[([\w\s*/+\-()]+)?]', member)
                     idx = 1
-                    member = re.search(r'(\w+)\[.*\]', member).group(1)
+                    member = re.search(r'(\w+)\[.*]', member).group(1)
                     for expr in expressions:
                         try:
                             idx = idx * int(eval(expr))
@@ -373,10 +374,10 @@ class StructUnionParser(CommonParser):
                             logging.error(f'Unrecognized macro: {expr}.. {struct.struct_name}')
 
                 elif '[' in member:  # 1 order array
-                    if re.search(r'\w+\[([\s*/\-+\d()]+)\]', member):  # support +-/*
-                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()]+)\]', member).groups()
-                    elif re.search(r'\w+\[([\s*/\-+\d\w]+)\]', member):  # There is a macro within array index
-                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()\w]+)\]', member).groups()
+                    if re.search(r'\w+\[([\s*/\-+\d()]+)]', member):  # support +-/*
+                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()]+)]', member).groups()
+                    elif re.search(r'\w+\[([\s*/\-+\d\w]+)]', member):  # There is a macro within array index
+                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()\w]+)]', member).groups()
                     try:
                         idx = int(eval(idx))
                     except Exception:
@@ -394,7 +395,7 @@ class StructUnionParser(CommonParser):
                     tmp = self.struct_class_name_list.index(struct_type)
                     order_idx[i] += f' + eval(order_idx[{tmp}])'
                 if struct_type in self.enum_class_name_list:
-                    struct_type = 'c_int'
+                    struct_type = 'c_long'
 
                 struct.member_idc.append(idx)
                 updated_struct_members.append(member)
@@ -500,7 +501,7 @@ class EnumParser(CommonParser):
                     self.enum_class_list.append(enum)
                     self.enum_class_name_list.append(enum.enum_name)
 
-                contents = re.findall(r'enum\s+(\w+)\s*\{([^{}]+)\};', lines)
+                contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)
                 for content in contents:
                     enum = self._Enum()
                     enum.enum_name = content[0]
@@ -609,7 +610,7 @@ class FunctionParser(CommonParser):
                 contents = rm_c_comments(contents)
                 contents = self.replace_macro(contents)
                 # This pattern matching rule may have bugs in other cases
-                contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*\{', contents)  # find all functions
+                contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
                 for content in contents:
                     if content[0] == 'else':           # remove else if clause
                         continue
@@ -802,20 +803,20 @@ class ArrayParser(CommonParser):
                 lines = fp.read()
                 lines = rm_c_comments(lines)
                 lines = self.replace_macro(lines)
-                contents = re.findall(r'\w+\s+(\w+)\s*(\[.*\])\s*=([^;]+);', lines)
+                contents = re.findall(r'\w+\s+(\w+)\s*(\[.*])\s*=([^;]+);', lines)
                 for content in contents:
                     arr = self._Array()
                     arr.arr_name = content[0]
                     # parsing the array indices
-                    idcs = re.findall(r'\[([\d\s*/+\-()]+)?\]', content[1])
+                    idcs = re.findall(r'\[([\d\s*/+\-()]+)?]', content[1])
                     for idc in idcs:
                         try:
                             arr.arr_idc.append(str(eval(idc)))
                         except Exception:
                             traceback.print_exc()
                             logging.error(f'Unrecognized expression in C array: {content[0]}{content[1]}')
-                    arr.arr_val = re.sub(r'\{', '[', content[2].strip())
-                    arr.arr_val = re.sub(r'}', ']', arr.arr_val)
+                    arr.arr_val = re.sub('{', '[', content[2].strip())
+                    arr.arr_val = re.sub('}', ']', arr.arr_val)
                     self.array_list.append(arr)
 
     def write_arr_into_py(self):
@@ -906,7 +907,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
                         val.append(f'{ret_type}')
 
                     key = content[1]
-                    args = re.findall(r'([\w*]+)\s+([*\w[\[\]]+)?', content[2])
+                    args = re.findall(r'([\w*]+)\s+([*\w\[\]]+)?', content[2])
                     for arg in args:                # For each parameter
                         param_info = arg
                         param = self._Param(param_info=param_info)
