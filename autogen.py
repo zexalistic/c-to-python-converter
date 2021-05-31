@@ -116,6 +116,7 @@ class CommonParser:
         self.exception_list = list()                    # list of keys in exception dict
         self.struct_class_list = list()                 # list of structure
         self.array_list = list()                        # list of large C arrays
+        self.func_name_list = list()                    # names of functions in wrapper
 
         self.macro_dict = dict()  # key = name of macro, value = value of macro
 
@@ -587,12 +588,17 @@ class FunctionParser(CommonParser):
                     contents = re.findall(r'([*\w]+)\s+([\w]+)([^;]+);', contents)  # find all functions
                 # For each function
                 for content in contents:
+                    if content[1] not in self.func_name_list:
+                        self.func_name_list.append(content[1])
+                    else:
+                        continue
                     func = self._Func()
                     ret_type = content[0]
+                    func.func_name = content[1]
                     func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
                     if func.ret_type in self.enum_class_name_list:
                         func.ret_type = 'c_int'
-                    func.func_name = content[1]
+
                     param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
                     param_infos = param_infos.split(',')
                     for param_info in param_infos:
@@ -614,12 +620,15 @@ class FunctionParser(CommonParser):
                 for content in contents:
                     if content[0] == 'else':           # remove else if clause
                         continue
+                    if content[1] not in self.func_name_list:
+                        self.func_name_list.append(content[1])
+                    else:
+                        continue
                     func = self._Func()
                     ret_type = content[0]
                     func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
                     if func.ret_type in self.enum_class_name_list:
                         func.ret_type = 'c_int'
-                    func.func_name = content[1]
                     param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
                     param_infos = param_infos.split(',')
                     for param_info in param_infos:
