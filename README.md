@@ -1,29 +1,42 @@
 ## Automatically converting C code to python using ctypes lib
 
-#### How to use
-+ Edit config.json
-+ Run autogen.py
-+ Python APIs are in wrapper.py
+#### Input
++ **sample/** : folder which contains your C code
++ **config.json** : settings of this tool
 
-#### Output
-+ wrapper.py : the python wrapper of C functions written in ctypes style
-+ Testcase_all.py: simple auto-generated testcases templates.
+
+#### <span id="output"> Output </span>
++ **enum_class.py** : Conversion result of C Enumeration type
++ **structure_class.py** : Conversion result of C Structure and Union type
++ **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)  
++ **wrapper.py** : Conversion result of C functions
++ **testcase.py**: Auto-generated testcases
+
+#### How to use
+See [Detailed User Guide](#DUG)
+
+
+#### Limitation
+1. Do not support other preprocessor commands except for "#define"
+   
+2. Do not support nested citation or definition. 
+   
+   e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
+   
+3. Regard all 'void' as 'int' at present version.
+   
+4. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
+
+ 
+#### TO-DO List in next version
+1. Generate testcase in pytest
+2. Deal with "const" and "unsigned" sign
 
 #### Brief introduction of ctypes
 ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
 from C project and use ctypes.CDLL to call those C functions. Since the data structure in C and python are 
 different, you need a wrapper as an interface to make the API more "pythonic". That's why I develop this 
 wrapper auto-generator.
-
-#### Limitation
-1. Do not support other preprocessor commands except for "#define"
-2. Do not support nested citation or definition. e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
-3. Regard all 'void' as 'int' at present version.
-4. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
-
- 
-#### TO-DO List in next version
-1. Write better testcases
 
 #### For more Information
 About what can be parsed, see the comments in Sample\sample.h.
@@ -37,36 +50,73 @@ https://docs.python.org/3/library/ctypes.html
 This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
-## Detailed User Guide 
-#### How to edit config.json
-You want to wrap the function *hello_world* in **Samples\main.c**. That function is defined in **Samples\main.h** and the related file is in **Samples\sample.h**. You complied your C files and put the result in **Samples\samples.dll**. Thus, you need to write below in config.json:
-> "dll_path": "Samples\\\samples.dll",
-"h_files_to_wrap": ["Samples\\\main.h"],
+## <span id="DUG">Detailed User Guide </span>
+#### How to use the tool step by step
++ Replace **sample/** with your own project
++ Your project folder should contains:
+    * DLL file generated from your C project
+    * Dependent header files containing your customized data structure
+    * Files containing functions you want to convert
+    * Add function prefix
+    
++ [Edit config.json](#edit_config) 
++ Run autogen.py
++ Check error messages.
+  
+  <font size=2>*You may forget to add some necessary dependent header files so that the parser is unable to 
+  recognize your customized data structure. Add them in config.json and run autogen.py again.*</font>
+  
++ Check your result in [output files](#output).
 
-If some functions are defined in Samples\main.c, you need to add:
-> "c_files_to_wrap": ["Samples\\\main.c"],
+#### <span id="edit_config">How to edit config.json </span>
++ Add DLL path. 
+  
+    Use your own file name. If you do not need [testcases,py](#output), skip this step.
+    > "dll_path": "your_prj_folder\\dll_yours.dll",
 
-This is optional, so it is commented by default. Functions only defined in header files are preferred.
++ Add dependent header file list. 
+  
+    These files contain all your customized data structure. [structure_class.py](#output) and
+  [enum_class.py](#output) are  generated from these files. Customized types such as "typedef my_int int;" 
+  are also parsed from these files. 
+  
+  If there is any unrecognized type due to lack of dependent files, the parser will skip those types and
+  not parse them. Thus, you may either replace those types manually in the [output files](#output) (not recommned)
+   or update the file list and run again.
+     > "dependent_header_file_list": ["your_prj_folder\\\a.h", ""your_prj_folder\\\lib\\\\*.h""],
 
-You opened **main.h** and found there are customized variable types *MY_BOOL* and *MY_INT*. They are defined in **Samples\sample.h**. Thus, you need to write below in config.json:
-> "h_files_to_parse": ["Samples\\\sample.h"],
++ Add file list containing the functions your want to convert.
 
-A prefix is usually necessary when you want to export the function to dll files. Thus, we use this as a sign to distinguish the C functions you want to wrap. 
-You need to write the prefix in config.json. In **main.h**, the prefix is *FUNC_PREFIX*:
-> "func_header": "FUNC_PREFIX",
+  We **STRONGLY** recommend you to use header files which contain the definition of functions, because they are cleaner.
 
-The device handler in hardware is complex and usually wrapped separatedly, so I leave a special entry for these types. The parser will bypass these types and not recognize them as a common structure pointer. You need to add these types in config.json:
-> "exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
+  > "h_files_to_wrap": ["your_prj_folder\\\a.h", "your_prj_folder\\\b.h"],
+  
+  > "c_files_to_wrap": ["your_prj_folder\\\d.c", "your_prj_folder\\\e.c"],
 
-In a real project of the author, the dictionary is:
->"exception_dict": {"MCESD_DEV_PTR": "c_void_p", "MZD_PVOID": "c_void_p", "MZD_DEV_PTR":  "c_void_p", "Device_Handle_t": "c_void_p"},
 
-Other parameters in config.json are optional to change. You can see the comments in config.json.
++ Add function prefix.
+  
+  We use this as a sign to indicate which function to convert.
 
-#### Notice
-Function prefix is necessary in the current version... Though this is a critical limitation...
+  Since you need something like "__declspec(dllexport)" to generate DLLs. 
+  It is common to use a macro to replace "__declspec(dllexport)"; you can use this macro as function prefix. 
+  
+  You can also define an empty macro as the function prefix.
+  
+  > "func_header": "YOUR_FUNC_PREFIX",
+  
++ Add exception dictionary.(Optional)
+  
+  For some complex structures, such as a device handler of a hardware device, you may just want to leave an interface of 
+  void pointer and define that structure in other place. In this case, you should edit the exception dictionary here.
+  
+  >"exception_dict": {"Device_Handle_t": "c_void_p"},
+  
 
-Anyway, you need that function prefix to generate the dll files.
++ Advanced Function (Optional)
+  
+   See source code or config.json by yourself.
 
-#### How to run
-Open an IDE and run autogen.py. Watch the logs to check if there are any errors. If not, everything is done.
+
+
+

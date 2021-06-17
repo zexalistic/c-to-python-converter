@@ -53,7 +53,7 @@ class BasicTypeParser:
         """
         Main function when you use this parser
         """
-        h_files_to_parse = self.env.get('h_files_to_parse', ['*.h'])
+        h_files_to_parse = self.env.get('dependent_header_file_list', ['*.h'])
         for file_path in h_files_to_parse:
             self.h_files.extend(glob.glob(file_path))
 
@@ -844,16 +844,13 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
     Store the macros in a dictionary
     """
     def __init__(self):
-        # StructUnionParser.__init__(self)
-        # EnumParser.__init__(self)
-        # ArrayParser.__init__(self)
         FunctionParser.__init__(self)
 
     def __call__(self):
         """
         Main function when you use this parser
         """
-        h_files_to_parse = self.env.get('h_files_to_parse', ['*.h'])
+        h_files_to_parse = self.env.get('dependent_header_file_list', ['*.h'])
         for file_path in h_files_to_parse:
             self.h_files.extend(glob.glob(file_path))
 
