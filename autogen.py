@@ -28,6 +28,21 @@ def rm_c_comments(lines):
     return lines
 
 
+def rm_ornamental_keywords(var_type):
+    """
+    remove ornamental keywords such as auto, volatile, static etc.
+    """
+
+    items = var_type.split(' ')
+    redundant_keyword_list = ['const', 'signed', 'auto', 'volatile', 'static', 'inline']
+    for key in redundant_keyword_list:
+        if key in items:
+            items.remove(key)
+
+    var_type = ' '.join(items)
+    return var_type
+
+
 class BasicTypeParser:
     """
     Parse basic C types such as int, double etc. , and customized types such as U32 (equal to uint32_t)
@@ -42,9 +57,11 @@ class BasicTypeParser:
         self.basic_type_dict = self.env.get('basic_type_dict', dict())
 
         self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
-        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t', 'long long',
+        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+                     'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
                      'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
-        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_longlong',
+        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
+                           'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
                            'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
         for key in self.keys:
             self.type_map_tree[key] = list()
@@ -65,7 +82,6 @@ class BasicTypeParser:
     def generate_basic_type_dict(self):
         # Add common types
         self.type_map_tree['int'].append('void')
-        self.type_map_tree['char'].append('const char')
 
         # parse header files
         for h_file in self.h_files:
@@ -76,12 +92,13 @@ class BasicTypeParser:
                 for content in contents:
                     original_type = content[0].strip()
                     customized_type = content[1]
+                    # remove redundant keywords
+                    if 'struct' in original_type:
+                        continue
+                    original_type = rm_ornamental_keywords(original_type)
                     if not self.search_tree(original_type, customized_type):
-                        if 'struct' in original_type:
-                            pass
-                        else:
-                            logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
-                                            f'or this is a nested calling which we do not support\n')
+                        logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
+                                        f'or this is a nested calling which we do not support\n')
 
     def search_tree(self, node, value):
         if node in self.keys:
@@ -96,9 +113,9 @@ class BasicTypeParser:
 
     def write_basic_type_dict_from_tree(self):
         for key, key_ctype in zip(self.keys, self.key_ctypes):
-            self.basic_type_dict[key] = key_ctype
+            self.basic_type_dict.setdefault(key, key_ctype)
             for node in self.type_map_tree[key]:
-                self.basic_type_dict[node] = key_ctype
+                self.basic_type_dict.setdefault(node, key_ctype)
 
 
 class CommonParser:
@@ -148,6 +165,8 @@ class CommonParser:
         """
         Convert customized variable type to ctype according to the type dict
         """
+        arg_type = rm_ornamental_keywords(arg_type)
+
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
         elif self.basic_type_dict.__contains__(arg_type):
@@ -164,6 +183,7 @@ class CommonParser:
             arg_ptr_flag = True
         else:
             logging.warning(f'Unrecognized type! Type name: {arg_type}')
+
         return arg_type, arg_ptr_flag
 
     def get_basic_type_dict(self):
@@ -925,7 +945,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
                         else:
                             val.append(f'{param.arg_type}')
                     val = ', '.join(val)
-                    self.func_pointer_dict[key] = val
+                    self.func_pointer_dict.setdefault(key, val)
 
 
 if __name__ == '__main__':
