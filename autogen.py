@@ -11,7 +11,7 @@ import shutil
 import copy
 
 
-def rm_c_comments(lines):
+def rm_c_comments(lines: str) -> str:
     """
     remove C comments in the file to parse
     """
@@ -28,7 +28,7 @@ def rm_c_comments(lines):
     return lines
 
 
-def rm_ornamental_keywords(var_type):
+def rm_ornamental_keywords(var_type: str) -> str:
     """
     remove ornamental keywords such as auto, volatile, static etc.
     """
@@ -57,6 +57,8 @@ class BasicTypeParser:
         self.basic_type_dict = self.env.get('basic_type_dict', dict())
 
         self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+
+        # Basic C types, pre-loading here
         self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
                      'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
                      'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
@@ -80,15 +82,18 @@ class BasicTypeParser:
         return self.basic_type_dict
 
     def generate_basic_type_dict(self):
-        # Add common types
+        """
+        Generate basic type dict from header files
+        """
+        # Manually add basic types here
         self.type_map_tree['int'].append('void')
 
-        # parse header files
+        # parse customized C types in header files
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                contents = re.findall(f'typedef\s+([\w\s]+)\s+(\w+);', lines)
+                contents = re.findall(f'typedef\s([\w\s]+)\s(\w+);', lines)
                 for content in contents:
                     original_type = content[0].strip()
                     customized_type = content[1]
@@ -161,9 +166,9 @@ class CommonParser:
             self.arg_type = arg_info[0].strip()
             self.arg_name = arg_info[1]
 
-    def convert_to_ctypes(self, arg_type, arg_ptr_flag):
+    def convert_to_ctypes(self, arg_type: str, arg_ptr_flag: bool):
         """
-        Convert customized variable type to ctype according to the type dict
+        Convert customized variable type to ctypes according to the type dict
         """
         arg_type = rm_ornamental_keywords(arg_type)
 
@@ -190,9 +195,9 @@ class CommonParser:
         basic_type_parser = BasicTypeParser()
         self.basic_type_dict = basic_type_parser()
 
-    def replace_macro(self, lines):
+    def replace_macro(self, lines: str) -> str:
         """
-        replace macro in C code with its definition and return the clear C code
+        replace macros in C code with its definition and return the clear C code
         """
         lines = re.sub(r'#define\s+.*\n', '', lines)
         for macro, val in self.macro_dict.items():
@@ -201,6 +206,9 @@ class CommonParser:
         return lines
 
     def get_macro(self):
+        """
+        Parse macros in header files and save them in macro_dict
+        """
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
@@ -222,12 +230,12 @@ class CommonParser:
                     else:
                         self.macro_dict[item[0]] = val
 
-        # remove func header
+        # skip function header
         if self.macro_dict.__contains__(self.func_header):
             self.macro_dict.pop(self.func_header)
 
     def extend_macro(self):
-        # regard Enumerate member as macro here
+        # regard Enumerate member as macro here, extend the macro list
         for enum in self.enum_class_list:
             for member, val in zip(enum.enum_members, enum.enum_values):
                 self.macro_dict[member] = str(val)
@@ -256,7 +264,9 @@ class StructUnionParser(CommonParser):
             return self.struct_members[item], self.struct_types[item], self.struct_types[item], self.member_idc[item]
 
     def generate_struct_union_class_list(self):
-        # parse header files
+        """
+        Parse header files and save structure/union into a list of class, which records their information
+        """
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
@@ -361,7 +371,7 @@ class StructUnionParser(CommonParser):
                         if struct_ptr:
                             self.struct_pointer_dict[struct_ptr[0]] = alias[0]
 
-    def convert_structure_class_to_ctype(self):
+    def convert_structure_class_to_ctypes(self):
         """
         Convert customized type to ctypes here; convert C array to legal python ctypes here.
 
@@ -436,7 +446,7 @@ class StructUnionParser(CommonParser):
 
     def write_structure_class_into_py(self):
         """
-        generate struct_class.py. Since device structure is complicated... I just write the device structure by myself
+        generate struct_class.py
         """
         with open('structure_class.py', 'w') as fp:
             fp.write('from ctypes import *\n\n\n')
@@ -484,15 +494,15 @@ class EnumParser(CommonParser):
         """
         def __init__(self):
             self.enum_name = None
-            self.enum_members = list()
-            self.enum_values = list()
+            self.enum_members = list()              # list of string
+            self.enum_values = list()               # list of integer
 
         def __getitem__(self, item):
             return self.enum_members[item], self.enum_values[item]
 
     def generate_enum_class_list(self):
         """
-        generate enum_class.py
+        Parse header files and get enumerate types. Store their information in enum_class
         """
         for h_file in self.h_files:
             with open(h_file) as fp:
@@ -522,7 +532,7 @@ class EnumParser(CommonParser):
                     self.enum_class_list.append(enum)
                     self.enum_class_name_list.append(enum.enum_name)
 
-                contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)
+                contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)  # parse another way to define a enum type
                 for content in contents:
                     enum = self._Enum()
                     enum.enum_name = content[0]
@@ -549,6 +559,9 @@ class EnumParser(CommonParser):
                     self.enum_class_name_list.append(enum.enum_name)
 
     def write_enum_class_into_py(self):
+        """
+        generate struct_class.py
+        """
         with open('enum_class.py', 'w') as f:
             f.write('from enum import Enum, unique, IntEnum\n\n')
             for enum in self.enum_class_list:
@@ -565,8 +578,8 @@ class FunctionParser(CommonParser):
     def __init__(self):
         super().__init__()
         self.func_list = list()
-        self.dll_name = 'APILib'                     # Name of CDLL
-        self.wrapper = self.env.get('name_of_wrapper', 'FunctionLib.py')  # Name of Output wrapper
+        self.dll_name = 'APILib'                                            # Alias of the return value of CDLL
+        self.wrapper = self.env.get('name_of_wrapper', 'FunctionLib.py')    # Name of Output wrapper
         self.dll_path = self.env.get('dll_path', 'samples.dll')
         self.testcase = self.env.get('name_of_testcase', 'Testcases_all.py')  # Output testcase
         self.is_multiple_file = self.env.get('is_multiple_file', False)
@@ -581,7 +594,10 @@ class FunctionParser(CommonParser):
             self.header_file = None
             self.parameters = list()
 
-        def get_arg_names(self):
+        def get_arg_names(self) -> str:
+            """
+            Parameter list to string of arguments in function
+            """
             ret = list()
             for param in self.parameters:
                 if param.arg_pointer_flag:
@@ -592,7 +608,7 @@ class FunctionParser(CommonParser):
 
     def generate_func_list_from_h_files(self):
         """
-        parse all the header files in the target folder;
+        parse all the header files in h_file list
         get all the functions to be wrapped.
         save those function information(name, argument type, return type) in func_list
         """
@@ -606,6 +622,7 @@ class FunctionParser(CommonParser):
                     contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
                 else:
                     contents = re.findall(r'([*\w]+)\s+([\w]+)([^;]+);', contents)  # find all functions
+                    logging.error("Lack of function header may very hopefully cause parsing errors.")
                 # For each function
                 for content in contents:
                     if content[1] not in self.func_name_list:
@@ -630,6 +647,11 @@ class FunctionParser(CommonParser):
                     self.func_list.append(func)
 
     def generate_func_list_from_c_files(self):
+        """
+        parse all the C files in c_file list
+        get all the functions to be wrapped.
+        save those function information(name, argument type, return type) in func_list
+        """
         for c_file in self.c_files:
             with open(c_file) as fp:
                 contents = fp.read()
@@ -660,6 +682,9 @@ class FunctionParser(CommonParser):
                     self.func_list.append(func)
 
     def write_funcs_to_wrapper(self):
+        """
+        Generate autogen.py
+        """
         wrapper_name = self.wrapper
         if self.is_multiple_file:
             try:
@@ -811,6 +836,9 @@ class FunctionParser(CommonParser):
 
 
 class ArrayParser(CommonParser):
+    """
+    Parse large arrays and write them in python style. This can help coder to call those large arrays in python without additional efforts.
+    """
     def __init__(self):
         super().__init__()
 
@@ -859,9 +887,8 @@ class ArrayParser(CommonParser):
 
 class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
     """
+    Major class of the final parser
     Parse the header files in the include path and store the customized variable types in python format.
-    Store the parsing result in enum_class.py (typedef enumerate) and structure_class.py (typedef structure)
-    Store the macros in a dictionary
     """
     def __init__(self):
         FunctionParser.__init__(self)
@@ -898,7 +925,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         self.extend_macro()
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
-        self.convert_structure_class_to_ctype()
+        self.convert_structure_class_to_ctypes()
         self.generate_array_list()
 
     def write_to_file(self):

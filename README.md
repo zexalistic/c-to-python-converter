@@ -56,8 +56,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
     * DLL file generated from your C project
     * Dependent header files containing your customized data structure
     * Files containing functions you want to convert
-    * Add function prefix
-    
++ [Add function prefix](#add_pre)       
 + [Edit config.json](#edit_config) 
 + Run autogen.py
 + Check error messages.
@@ -93,7 +92,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
   > "c_files_to_wrap": ["your_prj_folder\\\d.c", "your_prj_folder\\\e.c"],
 
 
-+ Add function prefix.
++ <span id="add_pre">Add function prefix.</span>
   
   We use this as a sign to indicate which function to convert.
 
