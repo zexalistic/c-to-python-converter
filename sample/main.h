@@ -9,4 +9,7 @@
 
 // We can parse either hello_world or hello_world_2 depending on whether you set func_header in config.json 
 FUNC_PREFIX MY_INT hello_world(MY_BOOL something);
+
 MY_INT hello_world_2(MY_BOOL something);
+
+FUNC_PREFIX MY_INT hello_world_3();
