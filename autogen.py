@@ -28,19 +28,16 @@ def rm_c_comments(lines: str) -> str:
     return lines
 
 
-def rm_ornamental_keywords(var_type: str) -> str:
+def rm_ornamental_keywords(lines: str) -> str:
     """
     remove ornamental keywords such as auto, volatile, static etc.
     """
-
-    items = var_type.split(' ')
     redundant_keyword_list = ['const', 'signed', 'auto', 'volatile', 'static', 'inline']
-    for key in redundant_keyword_list:
-        if key in items:
-            items.remove(key)
 
-    var_type = ' '.join(items)
-    return var_type
+    for key in redundant_keyword_list:
+        lines = re.sub(r'\b{}\b'.format(key), '', lines)
+
+    return lines
 
 
 class BasicTypeParser:
@@ -617,6 +614,7 @@ class FunctionParser(CommonParser):
                 contents = fp.read()
                 contents = rm_c_comments(contents)
                 contents = self.replace_macro(contents)
+                contents = rm_ornamental_keywords(contents)
                 # This pattern matching rule may have bugs in other cases
                 if self.func_header:
                     contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
@@ -657,6 +655,7 @@ class FunctionParser(CommonParser):
                 contents = fp.read()
                 contents = rm_c_comments(contents)
                 contents = self.replace_macro(contents)
+                contents = rm_ornamental_keywords(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
                 for content in contents:

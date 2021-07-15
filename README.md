@@ -29,7 +29,10 @@ See [Detailed User Guide](#DUG)
 
  
 #### TO-DO List in next version
-1. Generate testcase in pytest
+1. No parameter
+2.#ifdef #notdefine
+3. Add additional debugging information   
+4. C function parser. {} within {}
 
 #### Brief introduction of ctypes
 ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
