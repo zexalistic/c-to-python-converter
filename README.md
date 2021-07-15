@@ -27,11 +27,14 @@ See [Detailed User Guide](#DUG)
    
 4. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
- 
+5. Do not consider compiling information such as #include. This means if you want to use #ifdef, I STRONGLY 
+recommend you to define the macro within the same file instead of defining them in an external header file.
+
 #### TO-DO List in next version
-1. No parameter
-2.#ifdef #notdefine
+2. \#ifdef #notdefine
+
 3. Add additional debugging information   
+   
 4. C function parser. {} within {}
 
 #### Brief introduction of ctypes

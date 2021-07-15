@@ -617,9 +617,10 @@ class FunctionParser(CommonParser):
                 contents = rm_ornamental_keywords(contents)
                 # This pattern matching rule may have bugs in other cases
                 if self.func_header:
-                    contents = re.findall(r'{} ([*\w]+)\s+([\w]+)([^;]+);'.format(self.func_header), contents)       # find all functions
+                    # Another way is to use [^;] to replace .*?
+                    contents = re.findall(r'{}\s+([*\w]+)\s+(\w+)\s*\((.*?)\)\s*;'.format(self.func_header), contents, re.S)       # find all functions
                 else:
-                    contents = re.findall(r'([*\w]+)\s+([\w]+)([^;]+);', contents)  # find all functions
+                    contents = re.findall(r'([*\w]+)\s+(\w+)([^;]+);', contents)  # find all functions
                     logging.error("Lack of function header may very hopefully cause parsing errors.")
                 # For each function
                 for content in contents:
@@ -634,13 +635,18 @@ class FunctionParser(CommonParser):
                     if func.ret_type in self.enum_class_name_list:
                         func.ret_type = 'c_int'
 
-                    param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
-                    param_infos = param_infos.split(',')
-                    for param_info in param_infos:
-                        param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
-                        param = self._Param(param_info=param_info)
-                        param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
-                        func.parameters.append(param)
+                    # parse parameters
+                    param_infos = re.sub(r'\n', '', content[2])                          # remove () and \n in parameters
+                    if not param_infos or param_infos.strip() == 'void':
+                        func.parameters = list()
+                    else:
+                        param_infos = param_infos.split(',')
+                        for param_info in param_infos:
+                            param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
+                            param = self._Param(param_info=param_info)
+                            param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
+                            func.parameters.append(param)
+
                     func.header_file = os.path.basename(h_file)[:-2]
                     self.func_list.append(func)
 
