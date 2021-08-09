@@ -1,18 +1,20 @@
 {
 	"#": "====================================================You have to check and change these variables for new wrappers(Mandatory)=================================================================",
-	"dll_path": "sample\\sample.dll",
-	"dependent_header_file_list": ["sample\\sample.h"],
-	"#c_files_to_wrap": ["sample\\main.c"],
-	"h_files_to_wrap": ["sample\\main.h"],
-	"func_header": "FUNC_PREFIX",
-	"exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
+	"dll_path": "Debug\\mzd.dll",
+	"dependent_header_file_list": ["x9340api\\X9340_mzd\\*.h", "x9340api\\X9340_mzd\\serdes\\*.h", "x9340api\\X9340_mzd\\serdes\\N5C112GX4\\*.h"],
+	"#c_files_to_wrap": ["x9340api\\X9340_mzd\\*.c"],
+	"h_files_to_wrap": ["x9340api\\X9340_mzd\\*.h"],
+	"func_header": "MZD_FUNC",
+	"exception_dict": {"MY_STRUCT_PTR": "c_void_p", "MCESD_DEV_PTR": "c_void_p", "MZD_PVOID": "c_void_p", "MZD_DEV_PTR":  "c_void_p", "Device_Handle_t": "c_void_p", "MCESD_PVOID":  "c_void_p"},
 
 	"#": "====================================================It is ok if you don't change these variables (Optional)==================================================================================",
 	"name_of_wrapper": "python_API.py",
 	"name_of_testcase": "testcases.py",
 	"name_of_testcase_template": "testcase_template.py",
 	"is_multiple_file" : false,
+	"predefined_macro_dict": {"NULL": "0"},
 
 	"#": "===============================================================Comment for this script=======================================================================================================",
-	"#": "@is_multiple_file: write all wrappers in one file or in multiple files"
+	"#": "@is_multiple_file: write all wrappers in one file or in multiple files",
+	"#": "@predefined_macro_dict: add additional macro definition here"
 }

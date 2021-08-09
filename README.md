@@ -17,25 +17,27 @@ See [Detailed User Guide](#DUG)
 
 
 #### Limitation
-1. Do not support other preprocessor commands except for "#define"
-   
-2. Do not support nested citation or definition. 
+1. Do not support nested citation or definition. 
    
    e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
    
-3. Regard all 'void' as 'int' at present version.
+2. Regard all 'void' as 'int' at present version.
    
-4. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
+3. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
-5. Do not consider compiling information such as #include. This means if you want to use #ifdef, I STRONGLY 
-recommend you to define the macro within the same file instead of defining them in an external header file.
 
 #### TO-DO List in next version
-2. \#ifdef #notdefine
+1. \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
 
-3. Add additional debugging information   
+2. Add additional debugging information   
    
-4. C function parser. {} within {}
+3. C function parser. {} within {}
+
+
+#### Ideas
+I am not sure whether to put all pre-processed header files in a list is a good choice. Most compilers 
+use intermediate files and delete them after compiling. Temporarily I will choose the easier way and 
+I will add the other way afterwards.
 
 #### Brief introduction of ctypes
 ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 

@@ -9,6 +9,7 @@ import traceback
 import json
 import shutil
 import copy
+from collections import deque
 
 
 def rm_c_comments(lines: str) -> str:
@@ -137,8 +138,6 @@ class CommonParser:
         self.array_list = list()                        # list of large C arrays
         self.func_name_list = list()                    # names of functions in wrapper
 
-        self.macro_dict = dict()  # key = name of macro, value = value of macro
-
         # Read from json
         with open('config.json', 'r') as fp:
             self.env = json.load(fp)
@@ -146,6 +145,7 @@ class CommonParser:
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
         self.func_header = self.env.get('func_header', '__declspec(dllexport)')
+        self.macro_dict = self.env.get('predefined_macro_dict', dict())
 
     class _Param:
         """
@@ -192,6 +192,179 @@ class CommonParser:
         basic_type_parser = BasicTypeParser()
         self.basic_type_dict = basic_type_parser()
 
+
+class PreProcessor(CommonParser):
+    """
+    Preprocess header files
+    """
+    def __init__(self):
+        super().__init__()
+        self.macro_dict = dict()  # key = name of macro, value = value of macro
+        self.intermediate_h_files = list()  # list of intermediate h files
+
+    def pre_process(self):
+        self.h_files = self.sort_h_files(self.h_files)
+        for h_file in self.h_files:
+            with open(h_file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                lines = rm_ornamental_keywords(lines)
+                self.intermediate_h_files.append(lines)
+
+    def get_macro(self, lines: str):
+        """
+        Parse the #define clause and get the macro dictionary
+        """
+        macro_list = re.findall(r'#define\s+(\w+)\b(.*)\n', lines)
+        for item in macro_list:
+            val = item[1].strip()
+            if val.startswith('0x'):
+                if val.endswith('UL'):
+                    val = val[:-2]
+                elif val.endswith('U') or val.endswith('L'):
+                    val = val[:-1]
+
+                try:
+                    self.macro_dict[item[0]] = eval(val)
+                except Exception:
+                    traceback.print_exc()
+                    logging.error(f'Do not support complex hex compression: #define {item[0]} {val}')
+            else:
+                self.macro_dict[item[0]] = val
+
+        # skip function header
+        if self.macro_dict.__contains__(self.func_header):
+            self.macro_dict.pop(self.func_header)
+
+    # TODO： #define 包括宏
+    def check_macro(self):
+        for i, lines in enumerate(self.intermediate_h_files):
+            lines = self.intermediate_h_files[i]
+            # define\s+(\w+)\b(.*)\n
+            blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
+            criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
+            new_lines = ''
+            flag_stack = deque()
+            flag = True
+            flag_if_else = True
+            for idx in range(len(criterion)):
+                # These lines are executable
+                if flag:
+                    self.get_macro(blocks[idx])
+                    new_lines += blocks[idx]
+
+                # check ifndef, ifdef, if, if defined
+                if criterion[idx].startswith('#ifndef'):
+                    tmp = re.search(r'#ifndef\s+(\w+)', criterion[idx])
+                    macro = tmp.group(1)
+                    flag_stack.append(flag)
+                    if self.macro_dict.__contains__(macro):
+                        flag = False
+                        flag_if_else = False
+                    else:
+                        flag = True and flag_stack[-1]
+                        flag_if_else = True
+                elif criterion[idx].startswith('#ifdef'):
+                    tmp = re.search(r'#ifdef\s+(\w+)', criterion[idx])
+                    macro = tmp.group(1)
+                    flag_stack.append(flag)
+                    if self.macro_dict.__contains__(macro):
+                        flag = True and flag_stack[-1]
+                        flag_if_else = True
+                    else:
+                        flag = False
+                        flag_if_else = False
+                elif criterion[idx].startswith('#endif'):
+                    flag = flag_stack.pop()
+                elif criterion[idx].startswith('#if'):
+                    flag_stack.append(flag)
+                    tmp = re.search(r'#if\s+(.+)', criterion[idx])
+                    expr = tmp.group(1)
+                    expr = re.sub('!', '~', expr)
+                    tmp = re.findall(r'defined\s+\w+\b', expr)
+                    for item in tmp:
+                        if self.macro_dict.__contains__(item):
+                            expr = re.sub(item, '1', expr)
+                        else:
+                            expr = re.sub(item, '0', expr)
+                    tmp = re.findall(r'\b\w+\b', expr)
+                    for item in tmp:
+                        if self.macro_dict.__contains__(item):
+                            expr = re.sub(item, self.macro_dict[item], expr)
+
+                    val = 1
+                    try:
+                        val = eval(expr)
+                    except:
+                        logging.warning(f'Undefined expression: {expr}')
+
+                    if val:
+                        flag = True and flag_stack[-1]
+                        flag_if_else = True
+                    else:
+                        flag = False
+                        flag_if_else = False
+
+                elif criterion[idx].startswith('#elif'):
+                    if flag_if_else:
+                        continue
+                    tmp = re.search(r'#elif\s+(.+)', criterion[idx])
+                    expr = tmp.group(1)
+                    expr = re.sub('!', '~', expr)
+                    tmp = re.findall(r'defined\s+\w+\b', expr)
+                    for item in tmp:
+                        if self.macro_dict.__contains__(item):
+                            expr = re.sub(item, '1', expr)
+                        else:
+                            expr = re.sub(item, '0', expr)
+                    tmp = re.findall(r'\b\w+\b', expr)
+                    for item in tmp:
+                        if self.macro_dict.__contains__(item):
+                            expr = re.sub(item, self.macro_dict[item], expr)
+
+                    val = 1
+                    try:
+                        val = eval(expr)
+                    except:
+                        logging.error(f'Un-parsable  expression: {expr}')
+
+                    if val:
+                        flag = True and flag_stack[-1]
+                        flag_if_else = True
+                    else:
+                        flag = False
+                        flag_if_else = False
+                elif criterion[idx].startswith('#else'):
+                    if flag_if_else:
+                        continue
+                    else:
+                        flag_if_else = True
+                        flag = True and flag_stack[-1]
+                else:
+                    logging.error(f"Unable to process : {criterion[idx]}")
+
+            self.intermediate_h_files[i] = new_lines
+
+    @staticmethod
+    def sort_h_files(h_files: list) -> list:
+        order_idc = [i for i in range(len(h_files))]
+
+        for i, h_file in enumerate(h_files):
+            with open(h_file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_c_comments(lines)
+                include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
+                for item in include_list:
+                    for idx, tmp in enumerate(h_files):
+                        if item in tmp:
+                            order_idc[i] += order_idc[idx]
+
+        tmp = list(zip(order_idc, h_files))
+        result = sorted(tmp, key=lambda  x: x[0])
+        sorted_h_files = [item[1] for item in result]
+
+        return sorted_h_files
+
     def replace_macro(self, lines: str) -> str:
         """
         replace macros in C code with its definition and return the clear C code
@@ -202,35 +375,6 @@ class CommonParser:
 
         return lines
 
-    def get_macro(self):
-        """
-        Parse macros in header files and save them in macro_dict
-        """
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                macro_list = re.findall(r'#define\s+(\w+)\b(.*)\n', lines)
-                for item in macro_list:
-                    val = item[1].strip()
-                    if val.startswith('0x'):
-                        if val.endswith('UL'):
-                            val = val[:-2]
-                        elif val.endswith('U') or val.endswith('L'):
-                            val = val[:-1]
-
-                        try:
-                            self.macro_dict[item[0]] = eval(val)
-                        except Exception:
-                            traceback.print_exc()
-                            logging.error(f'Do not support complex hex compression: #define {item[0]} {val}')
-                    else:
-                        self.macro_dict[item[0]] = val
-
-        # skip function header
-        if self.macro_dict.__contains__(self.func_header):
-            self.macro_dict.pop(self.func_header)
-
     def extend_macro(self):
         # regard Enumerate member as macro here, extend the macro list
         for enum in self.enum_class_list:
@@ -238,7 +382,7 @@ class CommonParser:
                 self.macro_dict[member] = str(val)
 
 
-class StructUnionParser(CommonParser):
+class StructUnionParser(PreProcessor):
     """
     Parse the header files in the folder. Get the structure and Unions
     """
@@ -264,109 +408,105 @@ class StructUnionParser(CommonParser):
         """
         Parse header files and save structure/union into a list of class, which records their information
         """
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                lines = self.replace_macro(lines)
-                structs = re.findall(r'typedef struct[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
-                struct_flags = [False] * len(structs)
-                unions = re.findall(r'typedef union[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
-                union_flags = [True] * len(unions)
-                contents = structs + unions
-                flags = struct_flags + union_flags
-                for content, flag in zip(contents, flags):
-                    struct = self._Struct()
-                    struct.isUnion = flag
-                    struct_name = re.sub(r'\s', '', content[1])
-                    if re.search(r',\s*\*', struct_name):
-                        struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
-                        self.struct_pointer_dict[struct_pointer_name] = struct_name
-                    struct.struct_name = struct_name
-                    struct_infos = content[0].split(';')
-                    for struct_info in struct_infos:
-                        struct_info = struct_info.strip()                                                  # This is necessary
-                        tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)                        # parse the members of structure
-                        if tmp:        # filter the empty list
-                            member_type = tmp[0][0]
-                            member_name = tmp[0][1]
-                            member_type = member_type.strip()
-                            member_name = member_name.strip()
-                            # find the pointer, this part only support 1st order pointer
-                            if member_type.endswith('*'):
-                                struct.struct_types.append(member_type[:-1])
-                                struct.struct_members.append(member_name)
-                                struct.pointer_flags.append(True)
-                            elif member_name.endswith('[]'):
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name[:-2])
-                                struct.pointer_flags.append(True)
-                            elif member_name.startswith('*'):
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name[1:])
-                                struct.pointer_flags.append(True)
-                            else:
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name)
-                                struct.pointer_flags.append(False)
-                    self.struct_class_list.append(struct)
-                    self.struct_class_name_list.append(struct.struct_name)
+        for lines in self.intermediate_h_files:
+            structs = re.findall(r'typedef struct[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+            struct_flags = [False] * len(structs)
+            unions = re.findall(r'typedef union[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+            union_flags = [True] * len(unions)
+            contents = structs + unions
+            flags = struct_flags + union_flags
+            for content, flag in zip(contents, flags):
+                struct = self._Struct()
+                struct.isUnion = flag
+                struct_name = re.sub(r'\s', '', content[1])
+                if re.search(r',\s*\*', struct_name):
+                    struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
+                    self.struct_pointer_dict[struct_pointer_name] = struct_name
+                struct.struct_name = struct_name
+                struct_infos = content[0].split(';')
+                for struct_info in struct_infos:
+                    struct_info = struct_info.strip()                                                  # This is necessary
+                    tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)                        # parse the members of structure
+                    if tmp:        # filter the empty list
+                        member_type = tmp[0][0]
+                        member_name = tmp[0][1]
+                        member_type = member_type.strip()
+                        member_name = member_name.strip()
+                        # find the pointer, this part only support 1st order pointer
+                        if member_type.endswith('*'):
+                            struct.struct_types.append(member_type[:-1])
+                            struct.struct_members.append(member_name)
+                            struct.pointer_flags.append(True)
+                        elif member_name.endswith('[]'):
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name[:-2])
+                            struct.pointer_flags.append(True)
+                        elif member_name.startswith('*'):
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name[1:])
+                            struct.pointer_flags.append(True)
+                        else:
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name)
+                            struct.pointer_flags.append(False)
+                self.struct_class_list.append(struct)
+                self.struct_class_name_list.append(struct.struct_name)
 
-                structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
-                struct_flags = [False] * len(structs)
-                unions = re.findall(r'union\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
-                union_flags = [True] * len(unions)
-                contents = structs + unions
-                flags = struct_flags + union_flags
-                for content, flag in zip(contents, flags):
-                    struct = self._Struct()
-                    struct.isUnion = flag
-                    struct_name = re.sub(r'\s', '', content[0])
-                    struct.struct_name = struct_name
-                    struct_infos = content[1].split(';')
-                    for struct_info in struct_infos:
-                        struct_info = struct_info.strip()  # This is necessary
-                        tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
-                        if tmp:  # filter the empty list
-                            member_type = tmp[0][0]
-                            member_name = tmp[0][1]
-                            member_type = member_type.strip()
-                            member_name = member_name.strip()
-                            # find the pointer, this part only support 1st order pointer
-                            if member_type.endswith('*'):
-                                struct.struct_types.append(member_type[:-1])
-                                struct.struct_members.append(member_name)
-                                struct.pointer_flags.append(True)
-                            elif member_name.endswith('[]'):
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name[:-2])
-                                struct.pointer_flags.append(True)
-                            elif member_name.startswith('*'):
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name[1:])
-                                struct.pointer_flags.append(True)
-                            else:
-                                struct.struct_types.append(member_type)
-                                struct.struct_members.append(member_name)
-                                struct.pointer_flags.append(False)
-                    self.struct_class_list.append(struct)
-                    self.struct_class_name_list.append(struct.struct_name)
+            structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
+            struct_flags = [False] * len(structs)
+            unions = re.findall(r'union\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
+            union_flags = [True] * len(unions)
+            contents = structs + unions
+            flags = struct_flags + union_flags
+            for content, flag in zip(contents, flags):
+                struct = self._Struct()
+                struct.isUnion = flag
+                struct_name = re.sub(r'\s', '', content[0])
+                struct.struct_name = struct_name
+                struct_infos = content[1].split(';')
+                for struct_info in struct_infos:
+                    struct_info = struct_info.strip()  # This is necessary
+                    tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
+                    if tmp:  # filter the empty list
+                        member_type = tmp[0][0]
+                        member_name = tmp[0][1]
+                        member_type = member_type.strip()
+                        member_name = member_name.strip()
+                        # find the pointer, this part only support 1st order pointer
+                        if member_type.endswith('*'):
+                            struct.struct_types.append(member_type[:-1])
+                            struct.struct_members.append(member_name)
+                            struct.pointer_flags.append(True)
+                        elif member_name.endswith('[]'):
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name[:-2])
+                            struct.pointer_flags.append(True)
+                        elif member_name.startswith('*'):
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name[1:])
+                            struct.pointer_flags.append(True)
+                        else:
+                            struct.struct_types.append(member_type)
+                            struct.struct_members.append(member_name)
+                            struct.pointer_flags.append(False)
+                self.struct_class_list.append(struct)
+                self.struct_class_name_list.append(struct.struct_name)
 
-                    # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
-                    struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
+                # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
+                struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
+                if struct_ptr:
+                    self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
+                alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
+                if alias:
+                    struct_alias = copy.deepcopy(struct)
+                    struct_alias.struct_name = alias[0]
+                    self.struct_class_list.append(struct_alias)
+                    self.struct_class_name_list.append(alias[0])
+
+                    # find if there's any structure pointer
+                    struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
                     if struct_ptr:
-                        self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
-                    alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
-                    if alias:
-                        struct_alias = copy.deepcopy(struct)
-                        struct_alias.struct_name = alias[0]
-                        self.struct_class_list.append(struct_alias)
-                        self.struct_class_name_list.append(alias[0])
-
-                        # find if there's any structure pointer
-                        struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
-                        if struct_ptr:
-                            self.struct_pointer_dict[struct_ptr[0]] = alias[0]
+                        self.struct_pointer_dict[struct_ptr[0]] = alias[0]
 
     def convert_structure_class_to_ctypes(self):
         """
@@ -478,7 +618,7 @@ class StructUnionParser(CommonParser):
                     fp.write(f'{info_list}]\n\n\n')
 
 
-class EnumParser(CommonParser):
+class EnumParser(PreProcessor):
     """
     Parse the header files in the folder. Catch the enum types and sort them into enum_class.py
     """
@@ -501,59 +641,55 @@ class EnumParser(CommonParser):
         """
         Parse header files and get enumerate types. Store their information in enum_class
         """
-        for h_file in self.h_files:
-            with open(h_file) as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                lines = self.replace_macro(lines)
-                contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
-                for content in contents:
-                    enum = self._Enum()
-                    tmp = re.split(r'[{}]', content)  # split the typedef enum{ *** } name;
-                    enum_infos = re.sub(r'\s', '', tmp[1])
-                    enum.enum_name = re.sub(r'[\s;]', '', tmp[2])
-                    enum_infos = enum_infos.split(',')
-                    enum_infos = list(filter(None, enum_infos))
-                    for default_value, enum_info in enumerate(enum_infos):
-                        if '=' in enum_info:
-                            enum_member = enum_info.split('=')[0]
-                            enum_value = enum_info.split('=')[1]
-                            if enum_value.startswith('0x'):
-                                enum_value = int(enum_value, 16)
-                        else:
-                            enum_member = enum_info
-                            enum_value = default_value
-                        enum.enum_members.append(enum_member)
-                        enum.enum_values.append(enum_value)
+        for lines in self.intermediate_h_files:
+            contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
+            for content in contents:
+                enum = self._Enum()
+                tmp = re.split(r'[{}]', content)  # split the typedef enum{ *** } name;
+                enum_infos = re.sub(r'\s', '', tmp[1])
+                enum.enum_name = re.sub(r'[\s;]', '', tmp[2])
+                enum_infos = enum_infos.split(',')
+                enum_infos = list(filter(None, enum_infos))
+                for default_value, enum_info in enumerate(enum_infos):
+                    if '=' in enum_info:
+                        enum_member = enum_info.split('=')[0]
+                        enum_value = enum_info.split('=')[1]
+                        if enum_value.startswith('0x'):
+                            enum_value = int(enum_value, 16)
+                    else:
+                        enum_member = enum_info
+                        enum_value = default_value
+                    enum.enum_members.append(enum_member)
+                    enum.enum_values.append(enum_value)
 
-                    self.enum_class_list.append(enum)
-                    self.enum_class_name_list.append(enum.enum_name)
+                self.enum_class_list.append(enum)
+                self.enum_class_name_list.append(enum.enum_name)
 
-                contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)  # parse another way to define a enum type
-                for content in contents:
-                    enum = self._Enum()
-                    enum.enum_name = content[0]
-                    enum_infos = re.sub(r'\s', '', content[1])
-                    enum_infos = enum_infos.split(',')
-                    enum_infos = list(filter(None, enum_infos))
-                    default_value = 0
-                    for enum_info in enum_infos:
-                        if '=' in enum_info:
-                            enum_member = enum_info.split('=')[0]
-                            enum_value = enum_info.split('=')[1]
-                            if enum_value.startswith('0x'):
-                                enum_value = int(enum_value, 16)
-                            default_value = enum_value
-                        else:
-                            enum_member = enum_info
-                            enum_value = default_value
+            contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)  # parse another way to define a enum type
+            for content in contents:
+                enum = self._Enum()
+                enum.enum_name = content[0]
+                enum_infos = re.sub(r'\s', '', content[1])
+                enum_infos = enum_infos.split(',')
+                enum_infos = list(filter(None, enum_infos))
+                default_value = 0
+                for enum_info in enum_infos:
+                    if '=' in enum_info:
+                        enum_member = enum_info.split('=')[0]
+                        enum_value = enum_info.split('=')[1]
+                        if enum_value.startswith('0x'):
+                            enum_value = int(enum_value, 16)
+                        default_value = enum_value
+                    else:
+                        enum_member = enum_info
+                        enum_value = default_value
 
-                        default_value += 1
-                        enum.enum_members.append(enum_member)
-                        enum.enum_values.append(enum_value)
+                    default_value += 1
+                    enum.enum_members.append(enum_member)
+                    enum.enum_values.append(enum_value)
 
-                    self.enum_class_list.append(enum)
-                    self.enum_class_name_list.append(enum.enum_name)
+                self.enum_class_list.append(enum)
+                self.enum_class_name_list.append(enum.enum_name)
 
     def write_enum_class_into_py(self):
         """
@@ -568,7 +704,7 @@ class EnumParser(CommonParser):
                 f.write('\n\n')
 
 
-class FunctionParser(CommonParser):
+class FunctionParser(PreProcessor):
     """
     Automatically parse the header files
     """
@@ -609,46 +745,41 @@ class FunctionParser(CommonParser):
         get all the functions to be wrapped.
         save those function information(name, argument type, return type) in func_list
         """
-        for h_file in self.h_files:
-            with open(h_file) as fp:
-                contents = fp.read()
-                contents = rm_c_comments(contents)
-                contents = self.replace_macro(contents)
-                contents = rm_ornamental_keywords(contents)
-                # This pattern matching rule may have bugs in other cases
-                if self.func_header:
-                    # Another way is to use [^;] to replace .*?
-                    contents = re.findall(r'{}\s+([*\w]+)\s+(\w+)\s*\((.*?)\)\s*;'.format(self.func_header), contents, re.S)       # find all functions
+        for lines, h_file in zip(self.intermediate_h_files, self.h_files):
+            # This pattern matching rule may have bugs in other cases
+            if self.func_header:
+                # Another way is to use [^;] to replace .*?
+                lines = re.findall(r'{}\s+([*\w]+)\s+(\w+)\s*\((.*?)\)\s*;'.format(self.func_header), lines, re.S)       # find all functions
+            else:
+                lines = re.findall(r'([*\w]+)\s+(\w+)([^;]+);', lines)  # find all functions
+                logging.error("Lack of function header may very hopefully cause parsing errors.")
+            # For each function
+            for content in lines:
+                if content[1] not in self.func_name_list:
+                    self.func_name_list.append(content[1])
                 else:
-                    contents = re.findall(r'([*\w]+)\s+(\w+)([^;]+);', contents)  # find all functions
-                    logging.error("Lack of function header may very hopefully cause parsing errors.")
-                # For each function
-                for content in contents:
-                    if content[1] not in self.func_name_list:
-                        self.func_name_list.append(content[1])
-                    else:
-                        continue
-                    func = self._Func()
-                    ret_type = content[0]
-                    func.func_name = content[1]
-                    func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
-                    if func.ret_type in self.enum_class_name_list:
-                        func.ret_type = 'c_int'
+                    continue
+                func = self._Func()
+                ret_type = content[0]
+                func.func_name = content[1]
+                func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
+                if func.ret_type in self.enum_class_name_list:
+                    func.ret_type = 'c_int'
 
-                    # parse parameters
-                    param_infos = re.sub(r'\n', '', content[2])                          # remove () and \n in parameters
-                    if not param_infos or param_infos.strip() == 'void':
-                        func.parameters = list()
-                    else:
-                        param_infos = param_infos.split(',')
-                        for param_info in param_infos:
-                            param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
-                            param = self._Param(param_info=param_info)
-                            param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
-                            func.parameters.append(param)
+                # parse parameters
+                param_infos = re.sub(r'\n', '', content[2])                          # remove () and \n in parameters
+                if not param_infos or param_infos.strip() == 'void':
+                    func.parameters = list()
+                else:
+                    param_infos = param_infos.split(',')
+                    for param_info in param_infos:
+                        param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
+                        param = self._Param(param_info=param_info)
+                        param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
+                        func.parameters.append(param)
 
-                    func.header_file = os.path.basename(h_file)[:-2]
-                    self.func_list.append(func)
+                func.header_file = os.path.basename(h_file)[:-2]
+                self.func_list.append(func)
 
     def generate_func_list_from_c_files(self):
         """
@@ -840,7 +971,7 @@ class FunctionParser(CommonParser):
                     fp.write('\n')
 
 
-class ArrayParser(CommonParser):
+class ArrayParser(PreProcessor):
     """
     Parse large arrays and write them in python style. This can help coder to call those large arrays in python without additional efforts.
     """
@@ -860,26 +991,22 @@ class ArrayParser(CommonParser):
         """
         Write large array in C to py
         """
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                lines = self.replace_macro(lines)
-                contents = re.findall(r'\w+\s+(\w+)\s*(\[.*])\s*=([^;]+);', lines)
-                for content in contents:
-                    arr = self._Array()
-                    arr.arr_name = content[0]
-                    # parsing the array indices
-                    idcs = re.findall(r'\[([\d\s*/+\-()]+)?]', content[1])
-                    for idc in idcs:
-                        try:
-                            arr.arr_idc.append(str(eval(idc)))
-                        except Exception:
-                            traceback.print_exc()
-                            logging.error(f'Unrecognized expression in C array: {content[0]}{content[1]}')
-                    arr.arr_val = re.sub('{', '[', content[2].strip())
-                    arr.arr_val = re.sub('}', ']', arr.arr_val)
-                    self.array_list.append(arr)
+        for lines in self.intermediate_h_files:
+            lines = re.findall(r'\w+\s+(\w+)\s*(\[.*])\s*=([^;]+);', lines)
+            for content in lines:
+                arr = self._Array()
+                arr.arr_name = content[0]
+                # parsing the array indices
+                idcs = re.findall(r'\[([\d\s*/+\-()]+)?]', content[1])
+                for idc in idcs:
+                    try:
+                        arr.arr_idc.append(str(eval(idc)))
+                    except Exception:
+                        traceback.print_exc()
+                        logging.error(f'Unrecognized expression in C array: {content[0]}{content[1]}')
+                arr.arr_val = re.sub('{', '[', content[2].strip())
+                arr.arr_val = re.sub('}', ']', arr.arr_val)
+                self.array_list.append(arr)
 
     def write_arr_into_py(self):
         if self.array_list:
@@ -906,6 +1033,8 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         for file_path in h_files_to_parse:
             self.h_files.extend(glob.glob(file_path))
 
+        self.pre_process()
+
         self.parse()
 
         self.write_to_file()
@@ -925,9 +1054,12 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         Parse the header files
         """
         self.get_basic_type_dict()
-        self.get_macro()
+        self.check_macro()
         self.generate_enum_class_list()
         self.extend_macro()
+        for i, lines in enumerate(self.intermediate_h_files):
+            lines = self.replace_macro(lines)
+            self.intermediate_h_files[i] = lines
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
         self.convert_structure_class_to_ctypes()
@@ -943,41 +1075,37 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
 
     def generate_func_ptr_dict(self):
         # parse header files
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                lines = self.replace_macro(lines)
-                m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
-                contents = re.findall(m, lines)
-                for content in contents:            # For each function pointer
-                    val = list()
-                    ret_type = content[0]
-                    if '*' in ret_type:
-                        ret_type, ret_pointer_flag = self.convert_to_ctypes(ret_type, True)
-                    else:
-                        ret_type, ret_pointer_flag = self.convert_to_ctypes(ret_type, False)
-                    if ret_type in self.enum_class_name_list:
-                        ret_type = 'c_int'
-                    if ret_pointer_flag:
-                        val.append(f'POINTER({ret_type})')
-                    else:
-                        val.append(f'{ret_type}')
+        for lines in self.intermediate_h_files:
+            m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
+            contents = re.findall(m, lines)
+            for content in contents:            # For each function pointer
+                val = list()
+                ret_type = content[0]
+                if '*' in ret_type:
+                    ret_type, ret_pointer_flag = self.convert_to_ctypes(ret_type, True)
+                else:
+                    ret_type, ret_pointer_flag = self.convert_to_ctypes(ret_type, False)
+                if ret_type in self.enum_class_name_list:
+                    ret_type = 'c_int'
+                if ret_pointer_flag:
+                    val.append(f'POINTER({ret_type})')
+                else:
+                    val.append(f'{ret_type}')
 
-                    key = content[1]
-                    args = re.findall(r'([\w*]+)\s+([*\w\[\]]+)?', content[2])
-                    for arg in args:                # For each parameter
-                        param_info = arg
-                        param = self._Param(param_info=param_info)
-                        param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
-                        if param.arg_type in self.enum_class_name_list:
-                            param.arg_type = 'c_int'
-                        if param.arg_pointer_flag:
-                            val.append(f'POINTER({param.arg_type})')
-                        else:
-                            val.append(f'{param.arg_type}')
-                    val = ', '.join(val)
-                    self.func_pointer_dict.setdefault(key, val)
+                key = content[1]
+                args = re.findall(r'([\w*]+)\s+([*\w\[\]]+)?', content[2])
+                for arg in args:                # For each parameter
+                    param_info = arg
+                    param = self._Param(param_info=param_info)
+                    param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
+                    if param.arg_type in self.enum_class_name_list:
+                        param.arg_type = 'c_int'
+                    if param.arg_pointer_flag:
+                        val.append(f'POINTER({param.arg_type})')
+                    else:
+                        val.append(f'{param.arg_type}')
+                val = ', '.join(val)
+                self.func_pointer_dict.setdefault(key, val)
 
 
 if __name__ == '__main__':
