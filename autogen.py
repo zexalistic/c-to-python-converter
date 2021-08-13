@@ -199,8 +199,27 @@ class PreProcessor(CommonParser):
     """
     def __init__(self):
         super().__init__()
-        self.macro_dict = dict()  # key = name of macro, value = value of macro
         self.intermediate_h_files = list()  # list of intermediate h files
+        self.macro_func_dict = dict()   # key = name of macro func, value = macro func class
+
+    class _MacroFunc:
+        """
+        Class containing information of a macro function
+        """
+        def __init__(self):
+            self.name = None            # name of macro
+            self.param_list = list()
+            self.value = None           # string representing the value of macro
+
+    def get_macro_func(self):
+        """
+        Parse the #define clause and get the macro function dictionary
+        """
+        for i, lines in enumerate(self.intermediate_h_files):
+            lines = self.intermediate_h_files[i]
+            items = re.findall(r'#define\s+(\w+)\(([\w\s,]+)\)\b(.*)\n', lines)
+            if items:
+                print(items)
 
     def pre_process(self):
         self.h_files = self.sort_h_files(self.h_files)
@@ -236,11 +255,10 @@ class PreProcessor(CommonParser):
         if self.macro_dict.__contains__(self.func_header):
             self.macro_dict.pop(self.func_header)
 
-    # TODO： #define 包括宏
+    # TODO： #define function macro
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
             lines = self.intermediate_h_files[i]
-            # define\s+(\w+)\b(.*)\n
             blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             new_lines = ''
@@ -295,7 +313,7 @@ class PreProcessor(CommonParser):
                     val = 1
                     try:
                         val = eval(expr)
-                    except:
+                    except Exception:
                         logging.warning(f'Undefined expression: {expr}')
 
                     if val:
@@ -345,25 +363,34 @@ class PreProcessor(CommonParser):
 
             self.intermediate_h_files[i] = new_lines
 
-    @staticmethod
-    def sort_h_files(h_files: list) -> list:
-        order_idc = [i for i in range(len(h_files))]
+    def sort_h_files(self, h_files: list) -> list:
+        sorted_queue = deque()
+        quick_table = [os.path.basename(h_file) for h_file in h_files]
 
-        for i, h_file in enumerate(h_files):
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
-                for item in include_list:
-                    for idx, tmp in enumerate(h_files):
-                        if item in tmp:
-                            order_idc[i] += order_idc[idx]
+        for idx, h_file in enumerate(h_files):
+            sorted_queue = self.sort_h_files_dfs(h_file, h_files, sorted_queue, quick_table)
 
-        tmp = list(zip(order_idc, h_files))
-        result = sorted(tmp, key=lambda  x: x[0])
-        sorted_h_files = [item[1] for item in result]
+        sorted_queue = list(sorted_queue)
+        unique_queue = list(set(sorted_queue))
+        unique_queue.sort(key=sorted_queue.index)
+        return unique_queue
 
-        return sorted_h_files
+    def sort_h_files_dfs(self, h_file: str, h_files: list, sorted_queue: deque, quick_table: list):
+        include_list = list()
+        with open(h_file, 'r') as fp:
+            lines = fp.read()
+            lines = rm_c_comments(lines)
+            include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
+
+        sorted_queue.appendleft(h_file)
+        for include_item in include_list:
+            if os.path.basename(include_item) in quick_table:
+                for item in h_files:
+                    if item.endswith(include_item):
+                        sorted_queue.appendleft(item)
+                        sorted_queue = self.sort_h_files_dfs(item, h_files, sorted_queue, quick_table)
+
+        return sorted_queue
 
     def replace_macro(self, lines: str) -> str:
         """
@@ -396,7 +423,7 @@ class StructUnionParser(PreProcessor):
         def __init__(self):
             self.struct_name = None                         # string
             self.struct_members = list()                    # list of string
-            self.struct_types = list()                      # list of string/ctypes
+            self.struct_types = list()                      # variable type of elements in structure
             self.pointer_flags = list()                     # list of bool
             self.member_idc = list()                        # list of integer
             self.isUnion = False                            # structure = False, Union = True
@@ -508,17 +535,38 @@ class StructUnionParser(PreProcessor):
                     if struct_ptr:
                         self.struct_pointer_dict[struct_ptr[0]] = alias[0]
 
+    def sort_structs(self):
+        sorted_queue = deque()
+
+        for item in self.struct_class_list:
+            sorted_queue = self.sort_structs_dfs(item, sorted_queue)
+
+        sorted_queue = list(sorted_queue)
+        unique_queue = list(set(sorted_queue))
+        unique_queue.sort(key=sorted_queue.index)
+
+    def sort_structs_dfs(self, item: _Struct, sorted_queue: deque):
+        calling_list = list()
+        for struct_type in item.struct_types:
+            if struct_type in self.struct_class_name_list:
+                calling_list.append(struct_type)
+
+        sorted_queue.appendleft(item)
+        for struct_type in calling_list:
+            if struct_type in self.struct_class_name_list:
+                idx = self.struct_class_name_list.index(struct_type)
+                dependent_struct = self.struct_class_list[idx]
+                sorted_queue.appendleft(dependent_struct)
+                sorted_queue = self.sort_structs_dfs(dependent_struct, sorted_queue)
+
+        return sorted_queue
+
     def convert_structure_class_to_ctypes(self):
         """
         Convert customized type to ctypes here; convert C array to legal python ctypes here.
 
         Since the member type of some structure is another class member, the order of definition of class has to be arranged so that structure_class.py
         can be imported as a python module.
-        Therefore, I create an algorithm to set an index indicating the order in struct_class_list.
-
-        Algorithm: Let B should be defined after A and C, the original order is ABC. To begin with, I set the order index as 1,2,3. Then, when I check B, I set
-        the order index B as index(A) + index(C) + index(B). Then, index(B) will always be larger than A and C. Finally, by sorting order index with structure_class,
-        I can get the correct order.
         """
         order_idx = [f'{i}' for i in range(len(self.struct_class_list))]
         updated_struct_list = list()
@@ -559,9 +607,6 @@ class StructUnionParser(PreProcessor):
                 if struct.struct_name not in self.exception_list:
                     struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
 
-                if struct_type in self.struct_class_name_list:
-                    tmp = self.struct_class_name_list.index(struct_type)
-                    order_idx[i] += f' + eval(order_idx[{tmp}])'
                 if struct_type in self.enum_class_name_list:
                     struct_type = 'c_long'
 
@@ -573,13 +618,7 @@ class StructUnionParser(PreProcessor):
             updated_struct_list.append(struct)
 
         # Sort the structure class
-        order_idc = list()
-        for idx in order_idx:
-            idx = eval(idx)
-            order_idc.append(idx)
-        tmp = list(zip(order_idc, updated_struct_list))
-        result = sorted(tmp, key=lambda x: x[0])
-        self.struct_class_list = [item[1] for item in result]
+        self.sort_structs()
 
     def write_structure_class_into_py(self):
         """
@@ -1054,6 +1093,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         Parse the header files
         """
         self.get_basic_type_dict()
+        # self.get_macro_func()
         self.check_macro()
         self.generate_enum_class_list()
         self.extend_macro()
@@ -1114,6 +1154,6 @@ if __name__ == '__main__':
     parser = Parser()
     parser()
 
-    from enum_class import *
-    from structure_class import *
-    parser.write_testcase()
+    # from enum_class import *
+    # from structure_class import *
+    # parser.write_testcase()
