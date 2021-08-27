@@ -1,14 +1,13 @@
 ## Automatically converting C code to python using ctypes lib
 
 #### Input
-+ **sample/** : folder which contains your C code
++ **input/** : folder which contains your C code
 + **config.json** : settings of this tool
 
 
 #### <span id="output"> Output </span>
 + **enum_class.py** : Conversion result of C Enumeration type
 + **structure_class.py** : Conversion result of C Structure and Union type
-+ **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)  
 + **wrapper.py** : Conversion result of C functions
 + **testcase.py**: Auto-generated testcases
 
@@ -34,11 +33,6 @@ See [Detailed User Guide](#DUG)
 3. C function parser. {} within {}
 
 
-#### Ideas
-I am not sure whether to put all pre-processed header files in a list is a good choice. Most compilers 
-use intermediate files and delete them after compiling. Temporarily I will choose the easier way and 
-I will add the other way afterwards.
-
 #### Brief introduction of ctypes
 ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
 from C project and use ctypes.CDLL to call those C functions. Since the data structure in C and python are 
@@ -59,20 +53,20 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ## <span id="DUG">Detailed User Guide </span>
 #### How to use the tool step by step
-+ Replace **sample/** with your own project
++ Replace **input/** with your own project
 + Your project folder should contains:
     * DLL file generated from your C project
     * Dependent header files containing your customized data structure
     * Files containing functions you want to convert
 + [Add function prefix](#add_pre)       
 + [Edit config.json](#edit_config) 
-+ Run autogen.py
++ Run main.py
 + Check error messages.
   
   <font size=2>*You may forget to add some necessary dependent header files so that the parser is unable to 
   recognize your customized data structure. Add them in config.json and run autogen.py again.*</font>
   
-+ Check your result in [output files](#output).
++ Check your result in [output/](#output).
 
 #### <span id="edit_config">How to edit config.json </span>
 + Add DLL path. 
