@@ -1,21 +1,39 @@
-## Automatically converting C code to python using ctypes lib
+## Converting C API to python lib
 
-#### Input
-+ **input/** : folder which contains your C code
-+ **config.json** : settings of this tool
-
-
-#### <span id="output"> Output </span>
-+ **enum_class.py** : Conversion result of C Enumeration type
-+ **structure_class.py** : Conversion result of C Structure and Union type
-+ **wrapper.py** : Conversion result of C functions
-+ **testcase.py**: Auto-generated testcases
-
-#### How to use
-See [Detailed User Guide](#DUG)
+### File structure
++ **src** : folder which contains the code of your project
++ <span id="output">**output**</span>:
+    + **enum_class.py** : Conversion result of C Enumeration type
+    + **structure_class.py** : Conversion result of C Structure and Union type
+    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)  
+    + **python_API.py** : Conversion result of C functions
+    + **testcase.py**: Auto-generated testcases (Optional, turned off in default)
++ **main.py** 
++ **config.json** : Advanced settings
++ **debug.log** : Recording debugging information
 
 
-#### Limitation
+### How to use
+1. Copy your source code into **src** folder
+2. Add [__declspec(dllexport)](#add_pre) before the definition of C APIs in header files.
+3. Add "#define MACSECLIB_API __declspec(dllexport)" in one of your header file
+4. Edit [config.json](#edit_config) for advance settings. 
+5. Run main.py
+6. Check the result in [output](#output). 
+
+### What this tool can do
++ Parsing C comment
++ Parsing typedef clause and getting our customized variable types
++ Parsing Array, Enum, Structure, Union
++ Parsing function pointer
++ Sorting the converted APIs and classes according to the order of calling, so that the file is executable
++ Getting the header files' dependency
++ Parsing macros and replace them (* macro function is not ready)
++ Parsing preprocessing clause, such as #ifdef, #if etc.
++ Searching the header files in project folder automatically
+
+
+### Limitation
 1. Do not support nested citation or definition. 
    
    e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
@@ -24,26 +42,38 @@ See [Detailed User Guide](#DUG)
    
 3. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
+4. \#if !defined(xx) && !defined(xx)
 
-#### TO-DO List in next version
+5. POINTER(void)
+
+7. Add debugging info about which file it belongs to.
+
+8. Remove func header
+
+### TO-DO List in next version
 1. \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
 
 2. Add additional debugging information   
    
 3. C function parser. {} within {}
 
+4. Recover file structure of the C project
 
-#### Brief introduction of ctypes
+
+6. Add the comment of function before the API
+
+
+
+### Brief introduction of ctypes
 ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
-from C project and use ctypes.CDLL to call those C functions. Since the data structure in C and python are 
-different, you need a wrapper as an interface to make the API more "pythonic". That's why I develop this 
+from C project and use *ctypes.CDLL* to call those C functions. 
+
+__declspec(dllexport) is an internal C prefix which implies this function will be export to dll.
+
+Since the data structure in C and python are different, you need a wrapper as an interface to make the API more "pythonic". That's why I develop this 
 wrapper auto-generator.
 
-#### For more Information
-About what can be parsed, see the comments in Sample\sample.h.
-It supports the conversion of structure, union, enumerate, typedef... which already meets the need of common project.
-It removes the C commands and processes the C blackslash at the end of each line.
-It substitutes all macros(except for function header) before parsing.
+### For more Information
 
 Python Ctypes document:
 https://docs.python.org/3/library/ctypes.html
@@ -51,32 +81,12 @@ https://docs.python.org/3/library/ctypes.html
 This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
-## <span id="DUG">Detailed User Guide </span>
-#### How to use the tool step by step
-+ Replace **input/** with your own project
-+ Your project folder should contains:
-    * DLL file generated from your C project
-    * Dependent header files containing your customized data structure
-    * Files containing functions you want to convert
-+ [Add function prefix](#add_pre)       
-+ [Edit config.json](#edit_config) 
-+ Run main.py
-+ Check error messages.
-  
-  <font size=2>*You may forget to add some necessary dependent header files so that the parser is unable to 
-  recognize your customized data structure. Add them in config.json and run autogen.py again.*</font>
-  
-+ Check your result in [output/](#output).
 
-#### <span id="edit_config">How to edit config.json </span>
-+ Add DLL path. 
-  
-    Use your own file name. If you do not need [testcases,py](#output), skip this step.
-    > "dll_path": "your_prj_folder\\dll_yours.dll",
+### <span id="edit_config">Manual of config.json </span>
 
-+ Add dependent header file list. 
++ Add dependent header file list.
   
-    These files contain all your customized data structure. [structure_class.py](#output) and
+  These files contain all your customized data structure. [structure_class.py](#output) and
   [enum_class.py](#output) are  generated from these files. Customized types such as "typedef my_int int;" 
   are also parsed from these files. 
   
@@ -85,27 +95,11 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
    or update the file list and run again.
      > "dependent_header_file_list": ["your_prj_folder\\\a.h", ""your_prj_folder\\\lib\\\\*.h""],
 
-+ Add file list containing the functions your want to convert.
-
-  We **STRONGLY** recommend you to use header files which contain the definition of functions, because they are cleaner.
-
-  > "h_files_to_wrap": ["your_prj_folder\\\a.h", "your_prj_folder\\\b.h"],
++ Add file list containing the definition of functions that your want to convert.
+  > "h_files_containing_definition_of_api": ["your_prj_folder\\\a.h", "your_prj_folder\\\b.h"],
   
-  > "c_files_to_wrap": ["your_prj_folder\\\d.c", "your_prj_folder\\\e.c"],
-
-
-+ <span id="add_pre">Add function prefix.</span>
   
-  We use this as a sign to indicate which function to convert.
-
-  Since you need something like "__declspec(dllexport)" to generate DLLs. 
-  It is common to use a macro to replace "__declspec(dllexport)"; you can use this macro as function prefix. 
-  
-  You can also define an empty macro as the function prefix.
-  
-  > "func_header": "YOUR_FUNC_PREFIX",
-  
-+ Add exception dictionary.(Optional)
++ Add exception dictionary.
   
   For some complex structures, such as a device handler of a hardware device, you may just want to leave an interface of 
   void pointer and define that structure in other place. In this case, you should edit the exception dictionary here.
@@ -113,7 +107,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
   >"exception_dict": {"Device_Handle_t": "c_void_p"},
   
 
-+ Advanced Function (Optional)
++ Advanced Function
   
    See source code or config.json by yourself.
 

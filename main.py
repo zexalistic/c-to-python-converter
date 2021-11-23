@@ -1,5 +1,10 @@
-# automatically generate Cpython wrapper file according to header files
-# Created by Yihao Liu on 2021/3/5
+"""
+    @usage: automatically generate Cpython wrapper file according to header files
+    @date: 2021-03-05
+    @author: Yihao Liu
+    @email: lyihao@marvell.com
+    @python: 3.7
+"""
 
 import glob
 import os
@@ -38,6 +43,14 @@ def rm_ornamental_keywords(lines: str) -> str:
     for key in redundant_keyword_list:
         lines = re.sub(r'\b{}\b'.format(key), '', lines)
 
+    return lines
+
+
+def rm_space_before_bracket(lines: str) -> str:
+    """
+    remove space before bracket, which will save the work to match arrays
+    """
+    lines = re.sub(r'\s+\[', '[', lines)
     return lines
 
 
@@ -85,15 +98,21 @@ class BasicTypeParser:
         """
         # Manually add basic types here
         self.type_map_tree['int'].append('void')
+        self.type_map_tree['uint8_t'].append('U8')
+        self.type_map_tree['uint16_t'].append('U16')
+        self.type_map_tree['uint32_t'].append('U32')
+        self.type_map_tree['uint64_t'].append('U64')
+        self.type_map_tree['_Bool'].append('BOOL')
+        self.type_map_tree['_Bool'].append('bool')
 
         # parse customized C types in header files
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                contents = re.findall(f'typedef\s([\w\s]+)\s(\w+);', lines)
+                contents = re.findall(r'typedef\s+([\w\s]+)\s+(\w+);', lines)
                 for content in contents:
-                    original_type = content[0].strip()
+                    original_type = content[0]
                     customized_type = content[1]
                     # remove redundant keywords
                     if 'struct' in original_type:
@@ -146,8 +165,6 @@ class CommonParser:
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
         self.func_header = self.env.get('func_header', '__declspec(dllexport)')
         self.macro_dict = self.env.get('predefined_macro_dict', dict())
-        self.name_of_enum_class = self.env.get('name_of_enum_class', 'enum_class.py')
-        self.name_of_struct_class = self.env.get('name_of_struct_class', 'structure_class.py')
 
     class _Param:
         """
@@ -170,6 +187,9 @@ class CommonParser:
         Convert customized variable type to ctypes according to the type dict
         """
         arg_type = rm_ornamental_keywords(arg_type)
+
+        # tmp solution
+        arg_type = arg_type.strip()
 
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
@@ -230,6 +250,7 @@ class PreProcessor(CommonParser):
                 lines = fp.read()
                 lines = rm_c_comments(lines)
                 lines = rm_ornamental_keywords(lines)
+                lines = rm_space_before_bracket(lines)
                 self.intermediate_h_files.append(lines)
 
     def get_macro(self, lines: str):
@@ -258,21 +279,22 @@ class PreProcessor(CommonParser):
             self.macro_dict.pop(self.func_header)
 
     # TODO： #define function macro
+    # TODO: #if a > 0
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
-            lines = self.intermediate_h_files[i]
+            lines = '\n' + self.intermediate_h_files[i]         # append a pseudo new line here to make sure there must be some code before #ifdef
             blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
-            new_lines = ''
             flag_stack = deque()
             flag = True
             flag_if_else = True
-            for idx in range(len(criterion)):
-                # These lines are executable
-                if flag:
-                    self.get_macro(blocks[idx])
-                    new_lines += blocks[idx]
+            new_lines = ''
+            if blocks:
+                tmp = blocks.pop(0)
+                self.get_macro(tmp)
+                new_lines += tmp
 
+            for idx in range(len(criterion)):
                 # check ifndef, ifdef, if, if defined
                 if criterion[idx].startswith('#ifndef'):
                     tmp = re.search(r'#ifndef\s+(\w+)', criterion[idx])
@@ -363,10 +385,11 @@ class PreProcessor(CommonParser):
                 else:
                     logging.error(f"Unable to process : {criterion[idx]}")
 
-            # The last part out of endif
-            if len(blocks) == len(criterion) + 1:
-                self.get_macro(blocks[-1])
-                new_lines += blocks[-1]
+                tmp = blocks.pop(0)
+                if flag:
+                    self.get_macro(tmp)
+                    new_lines += tmp
+
             self.intermediate_h_files[i] = new_lines
 
     def sort_h_files(self, h_files: list) -> list:
@@ -630,7 +653,7 @@ class StructUnionParser(PreProcessor):
         """
         generate struct_class.py
         """
-        with open(self.name_of_struct_class, 'w') as fp:
+        with open(os.path.join('output', 'structure_class.py'), 'w') as fp:
             fp.write('from ctypes import *\n\n\n')
             for struct in self.struct_class_list:
                 if struct.isUnion:
@@ -740,7 +763,7 @@ class EnumParser(PreProcessor):
         """
         generate struct_class.py
         """
-        with open(self.name_of_enum_class, 'w') as f:
+        with open(os.path.join('output', 'enum_class.py'), 'w') as f:
             f.write('from enum import Enum, unique, IntEnum\n\n')
             for enum in self.enum_class_list:
                 f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
@@ -757,9 +780,9 @@ class FunctionParser(PreProcessor):
         super().__init__()
         self.func_list = list()
         self.dll_name = 'APILib'                                            # Alias of the return value of CDLL
-        self.wrapper = self.env.get('name_of_wrapper', 'FunctionLib.py')    # Name of Output wrapper
-        self.dll_path = self.env.get('dll_path', 'samples.dll')
-        self.testcase = self.env.get('name_of_testcase', 'Testcases_all.py')  # Output testcase
+        self.wrapper = "python_API.py"                                      # Name of Output wrapper
+        self.dll_path = "api.dll"
+        self.testcase = "testcases.py"                                      # Output testcase
         self.is_multiple_file = self.env.get('is_multiple_file', False)
 
     class _Func:
@@ -837,6 +860,7 @@ class FunctionParser(PreProcessor):
                 contents = fp.read()
                 contents = rm_c_comments(contents)
                 contents = self.replace_macro(contents)
+                contents = rm_space_before_bracket(contents)
                 contents = rm_ornamental_keywords(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
@@ -864,9 +888,9 @@ class FunctionParser(PreProcessor):
 
     def write_funcs_to_wrapper(self):
         """
-        Generate autogen.py
+        Generate main.py
         """
-        wrapper_name = self.wrapper
+        wrapper_name = os.path.join('output', self.wrapper)
         if self.is_multiple_file:
             try:
                 os.mkdir('FunctionLib')
@@ -875,7 +899,7 @@ class FunctionParser(PreProcessor):
                 shutil.rmtree('FunctionLib')
                 os.mkdir('FunctionLib')
         else:
-            with open(self.wrapper, 'w') as fp:
+            with open(wrapper_name, 'w') as fp:
                 fp.write('from structure_class import *\n\n')
                 fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n\n')
 
@@ -887,7 +911,7 @@ class FunctionParser(PreProcessor):
                         fp.write('from structure_class import *\n\n')
                         fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n')
 
-            with open(self.wrapper, 'a') as fp:
+            with open(wrapper_name, 'a') as fp:
                 arg_names = func.get_arg_names()
                 fp.write(f'def {func.func_name}({arg_names}):\n')
 
@@ -933,9 +957,9 @@ class FunctionParser(PreProcessor):
     def write_testcase_header(self):
         with open(self.testcase, 'w') as fp:
             fp.write('import os\nimport logging\nimport time\nimport traceback\n')
-            fp.write('from output.enum_class import *\n')
-            fp.write('from output.structure_class import *\n')
-            fp.write(f'from output.{os.path.basename(self.wrapper)[:-3]} import *\n')
+            fp.write('from enum_class import *\n')
+            fp.write('from structure_class import *\n')
+            fp.write(f'from {self.wrapper[:-3]} import *\n')
             fp.write('\n')
             fp.write('if __name__ == "__main__":\n')
 
@@ -1074,9 +1098,16 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         """
         Main function when you use this parser
         """
-        h_files_to_parse = self.env.get('dependent_header_file_list', ['*.h'])
-        for file_path in h_files_to_parse:
-            self.h_files.extend(glob.glob(file_path))
+        h_files_to_parse = self.env.get('dependent_header_file_list', list())
+        if h_files_to_parse:            # Use user settings
+            for file_path in h_files_to_parse:
+                self.h_files.extend(glob.glob(file_path))
+        else:                           # search all the header files in src in default
+            for root, dirs, files in os.walk('src'):
+                for file in files:
+                    if file.endswith('.h'):
+                        file_path = os.path.join(root, file)
+                        self.h_files.append(file_path)
 
         self.pre_process()
 
@@ -1084,23 +1115,29 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
 
         self.write_to_file()
 
-        h_files_to_wrap = self.env.get('h_files_to_wrap', ['*.h'])
-        for file_path in h_files_to_wrap:
-            self.h_files.extend(glob.glob(file_path))
-        c_files_to_wrap = self.env.get('c_files_to_wrap', ['*.c'])
-        for file_path in c_files_to_wrap:
-            self.c_files.extend(glob.glob(file_path))
+        self.h_files = list()
+        h_files_to_wrap = self.env.get('h_files_containing_definition_of_api', list())
+        if h_files_to_wrap:            # Use user settings
+            for file_path in h_files_to_wrap:
+                self.h_files.extend(glob.glob(file_path))
+        else:                           # search all the header files in src in default
+            for root, dirs, files in os.walk('src'):
+                for file in files:
+                    if file.endswith('.h'):
+                        file_path = os.path.join(root, file)
+                        self.h_files.append(file_path)
+
         self.generate_func_list_from_h_files()
-        self.generate_func_list_from_c_files()
+        # self.generate_func_list_from_c_files()
         self.write_funcs_to_wrapper()
 
     def parse(self):
         """
         Parse the header files
         """
-        self.get_basic_type_dict()
-        # self.get_macro_func()
+        self.get_macro_func()
         self.check_macro()
+        self.get_basic_type_dict()
         self.generate_enum_class_list()
         self.extend_macro()
         for i, lines in enumerate(self.intermediate_h_files):
@@ -1108,6 +1145,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
             self.intermediate_h_files[i] = lines
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
+        # TODO: update func ptr dict
         self.convert_structure_class_to_ctypes()
         self.generate_array_list()
 
@@ -1155,11 +1193,11 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
 
-    from output.enum_class import *
-    from output.structure_class import *
-    parser.write_testcase()
+    # from output.enum_class import *
+    # from output.structure_class import *
+    # parser.write_testcase()

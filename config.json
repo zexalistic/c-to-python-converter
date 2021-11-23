@@ -1,21 +1,13 @@
 {
-	"#": "====================================================You have to check and change these variables for new wrappers(Mandatory)=================================================================",
-	"dll_path": "input\\sample.dll",
-	"dependent_header_file_list": ["input\\*.h"],
-	"h_files_to_wrap": ["input\\main.h"],
+	"#": "==========================================Advanced Settings=================================================",
 	"func_header": "FUNC_PREFIX",
-	"exception_dict": {"MY_STRUCT_PTR": "c_void_p"},
-
-	"#": "====================================================It is ok if you don't change these variables (Optional)==================================================================================",
-	"name_of_wrapper": "output\\python_API.py",
-	"name_of_testcase": "output\\testcases.py",
-	"name_of_enum_class": "output\\enum_class.py",
-	"name_of_struct_class": "output\\structure_class.py",
-	"name_of_testcase_template": "testcase_template.py",
+	"exception_dict": {},
 	"is_multiple_file" : false,
 	"predefined_macro_dict": {"NULL": "0"},
+	"dependent_header_file_list": ["src\\*.h"],
+	"h_files_containing_definition_of_api": ["src\\main.h"],
 
-	"#": "===============================================================Comment for this script=======================================================================================================",
+	"#": "======================Comment for this script===============================================================",
 	"#": "@is_multiple_file: write all wrappers in one file or in multiple files",
 	"#": "@predefined_macro_dict: add additional macro definition here"
 }

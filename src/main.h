@@ -5,7 +5,7 @@
 	All comments will be ignored.
 */
 
-# include "sample.h"
+#include "sample.h"
 
 // We can parse either hello_world or hello_world_2 depending on whether you set func_header in config.json 
 FUNC_PREFIX MY_INT hello_world(MY_BOOL something);

@@ -2,11 +2,11 @@ from ctypes import *
 
 
 class DEV(Structure):
-    _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, c_void_p))]
+    _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, MY_STRUCT_PTR))]
 
 
 class DEV2(Structure):
-    _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, c_void_p))]
+    _fields_ = [("func_p", CFUNCTYPE(c_int, c_int, MY_STRUCT_PTR))]
 
 
 class MY_UNION(Union):
