@@ -1,7 +1,7 @@
 ## Converting C API to python lib
 
 ### File structure
-+ **src** : folder which contains the code of your project
++ **prj** : folder which contains the code of your project
 + <span id="output">**output**</span>:
     + **enum_class.py** : Conversion result of C Enumeration type
     + **structure_class.py** : Conversion result of C Structure and Union type
@@ -34,34 +34,36 @@
 
 
 ### Limitation
-1. Do not support nested citation or definition. 
++ Do not support nested citation or definition. 
    
    e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
    
-2. Regard all 'void' as 'int' at present version.
++ Regard all 'void' as 'int' at present version.
    
-3. Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
++ Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
-4. \#if !defined(xx) && !defined(xx)
 
-5. POINTER(void)
+### TO-DO List in next version - Easy
++ \#if !defined(xx) && !defined(xx)
 
-7. Add debugging info about which file it belongs to.
++ POINTER(void)
 
-8. Remove func header
++ Add debugging info about which file it belongs to.
 
-### TO-DO List in next version
-1. \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
++ Remove func header
 
-2. Add additional debugging information   
++ Add the comment of function before the API
+
++ Rename 'src' as 'prj'
+
++ Add how to use customized path in Readme
+
+### TO-DO List in next version - Hard
++ \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
    
-3. C function parser. {} within {}
++ C function parser. {} within {}
 
-4. Recover file structure of the C project
-
-
-6. Add the comment of function before the API
-
++ Recover file structure of the C project
 
 
 ### Brief introduction of ctypes

@@ -4,6 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
+    @latest modification: 2021-12-30
+    @version: 2.0.4
+    @comment: rm additional newlines; todo-solve #if a>0; to-do add debug info
 """
 
 import glob
@@ -31,6 +34,11 @@ def rm_c_comments(lines: str) -> str:
     """
     lines = re.sub(r'\\\n', '', lines)
 
+    """
+    remove additional new lines to make debugging info clear
+    """
+    lines = re.sub(r'\n{3,}', '\n\n', lines)
+
     return lines
 
 
@@ -52,92 +60,6 @@ def rm_space_before_bracket(lines: str) -> str:
     """
     lines = re.sub(r'\s+\[', '[', lines)
     return lines
-
-
-class BasicTypeParser:
-    """
-    Parse basic C types such as int, double etc. , and customized types such as U32 (equal to uint32_t)
-    """
-    def __init__(self):
-        self.h_files = list()                           # list of header files
-        self.c_files = list()                           # list of C files to parse
-
-        # Read from json
-        with open('config.json', 'r') as fp:
-            self.env = json.load(fp)
-        self.basic_type_dict = self.env.get('basic_type_dict', dict())
-
-        self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
-
-        # Basic C types, pre-loading here
-        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
-                     'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
-                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
-        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
-                           'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
-                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
-        for key in self.keys:
-            self.type_map_tree[key] = list()
-
-    def __call__(self):
-        """
-        Main function when you use this parser
-        """
-        h_files_to_parse = self.env.get('dependent_header_file_list', ['*.h'])
-        for file_path in h_files_to_parse:
-            self.h_files.extend(glob.glob(file_path))
-
-        self.generate_basic_type_dict()
-        self.write_basic_type_dict_from_tree()
-
-        return self.basic_type_dict
-
-    def generate_basic_type_dict(self):
-        """
-        Generate basic type dict from header files
-        """
-        # Manually add basic types here
-        self.type_map_tree['int'].append('void')
-        self.type_map_tree['uint8_t'].append('U8')
-        self.type_map_tree['uint16_t'].append('U16')
-        self.type_map_tree['uint32_t'].append('U32')
-        self.type_map_tree['uint64_t'].append('U64')
-        self.type_map_tree['_Bool'].append('BOOL')
-        self.type_map_tree['_Bool'].append('bool')
-
-        # parse customized C types in header files
-        for h_file in self.h_files:
-            with open(h_file, 'r') as fp:
-                lines = fp.read()
-                lines = rm_c_comments(lines)
-                contents = re.findall(r'typedef\s+([\w\s]+)\s+(\w+);', lines)
-                for content in contents:
-                    original_type = content[0]
-                    customized_type = content[1]
-                    # remove redundant keywords
-                    if 'struct' in original_type:
-                        continue
-                    original_type = rm_ornamental_keywords(original_type)
-                    if not self.search_tree(original_type, customized_type):
-                        logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
-                                        f'or this is a nested calling which we do not support\n')
-
-    def search_tree(self, node, value):
-        if node in self.keys:
-            self.type_map_tree[node].append(value)
-            return node
-        else:
-            for key in self.keys:
-                if node in self.type_map_tree[key]:
-                    self.type_map_tree[key].append(value)
-                    return key
-            return None             # Not found any of this type
-
-    def write_basic_type_dict_from_tree(self):
-        for key, key_ctype in zip(self.keys, self.key_ctypes):
-            self.basic_type_dict.setdefault(key, key_ctype)
-            for node in self.type_map_tree[key]:
-                self.basic_type_dict.setdefault(node, key_ctype)
 
 
 class CommonParser:
@@ -182,14 +104,16 @@ class CommonParser:
             self.arg_type = arg_info[0].strip()
             self.arg_name = arg_info[1]
 
-    def convert_to_ctypes(self, arg_type: str, arg_ptr_flag: bool):
+    class _DebugInfo:
+        def __init__(self):
+            self.filename = ''
+            self.line_number = 0
+
+    def convert_to_ctypes(self, arg_type: str, arg_ptr_flag: bool, debug_info=None):
         """
         Convert customized variable type to ctypes according to the type dict
         """
         arg_type = rm_ornamental_keywords(arg_type)
-
-        # tmp solution
-        arg_type = arg_type.strip()
 
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
@@ -206,13 +130,11 @@ class CommonParser:
             arg_type = f'CFUNCTYPE({self.func_pointer_dict[arg_type]})'
             arg_ptr_flag = True
         else:
-            logging.warning(f'Unrecognized type! Type name: {arg_type}')
+            logging.warning(f'Unrecognized type! Type name: {arg_type}.')
+            if debug_info:
+                logging.warning(f'File: {debug_info.filename}, Line: {debug_info.line_number}')
 
         return arg_type, arg_ptr_flag
-
-    def get_basic_type_dict(self):
-        basic_type_parser = BasicTypeParser()
-        self.basic_type_dict = basic_type_parser()
 
 
 class PreProcessor(CommonParser):
@@ -240,6 +162,7 @@ class PreProcessor(CommonParser):
         for i, lines in enumerate(self.intermediate_h_files):
             lines = self.intermediate_h_files[i]
             items = re.findall(r'#define\s+(\w+)\(([\w\s,]+)\)\b(.*)\n', lines)
+            # remember to strip \w\s
             if items:
                 print(items)
 
@@ -279,12 +202,13 @@ class PreProcessor(CommonParser):
             self.macro_dict.pop(self.func_header)
 
     # TODO： #define function macro
-    # TODO: #if a > 0
+    # TODO: #if a > 0; 用re.S 但是还是得搞清楚先
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
             lines = '\n' + self.intermediate_h_files[i]         # append a pseudo new line here to make sure there must be some code before #ifdef
-            blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
-            criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
+            m = re.compile(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', re.S)
+            blocks = re.split(m, lines)
+            criterion = re.findall(m, lines)
             flag_stack = deque()
             flag = True
             flag_if_else = True
@@ -438,6 +362,73 @@ class PreProcessor(CommonParser):
                 self.macro_dict[member] = str(val)
 
 
+class TypeDefParser(PreProcessor):
+    """
+    Parse basic C types such as int, double etc. , and customized types such as U32 (equal to uint32_t)
+    """
+    def __init__(self):
+        super().__init__()
+
+        # Read from json
+        with open('config.json', 'r') as fp:
+            self.env = json.load(fp)
+        self.basic_type_dict = self.env.get('basic_type_dict', dict())
+
+        self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+
+        # Basic C types, pre-loading here
+        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+                     'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
+                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
+        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
+                           'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
+                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
+        for key in self.keys:
+            self.type_map_tree[key] = list()
+
+    def get_basic_type_dict(self):
+        self.generate_basic_type_dict()
+        self.write_basic_type_dict_from_tree()
+
+    def generate_basic_type_dict(self):
+        """
+        Generate basic type dict from header files
+        """
+        # Manually add basic types here
+        self.type_map_tree['int'].append('void')
+
+        # parse customized C types in header files
+        for lines in self.intermediate_h_files:
+            contents = re.findall(r'typedef\s+([\w\s]+)\s+(\w+);', lines)
+            for content in contents:
+                original_type = content[0].strip()
+                customized_type = content[1]
+                # remove redundant keywords
+                if 'struct' in original_type:
+                    continue
+                original_type = rm_ornamental_keywords(original_type)
+                if not self.search_tree(original_type, customized_type):
+                    logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
+                                    f'or this is a nested calling which we do not support\n')
+
+    def search_tree(self, node, value):
+        if node in self.keys:
+            self.type_map_tree[node].append(value)
+            return node
+        else:
+            for key in self.keys:
+                if node in self.type_map_tree[key]:
+                    self.type_map_tree[key].append(value)
+                    return key
+            return None             # Not found any of this type
+
+    def write_basic_type_dict_from_tree(self):
+        for key, key_ctype in zip(self.keys, self.key_ctypes):
+            self.basic_type_dict.setdefault(key, key_ctype)
+            for node in self.type_map_tree[key]:
+                self.basic_type_dict.setdefault(node, key_ctype)
+
+
 class StructUnionParser(PreProcessor):
     """
     Parse the header files in the folder. Get the structure and Unions
@@ -484,10 +475,8 @@ class StructUnionParser(PreProcessor):
                     struct_info = struct_info.strip()                                                  # This is necessary
                     tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)                        # parse the members of structure
                     if tmp:        # filter the empty list
-                        member_type = tmp[0][0]
-                        member_name = tmp[0][1]
-                        member_type = member_type.strip()
-                        member_name = member_name.strip()
+                        member_type = tmp[0][0].strip()
+                        member_name = tmp[0][1].strip()
                         # find the pointer, this part only support 1st order pointer
                         if member_type.endswith('*'):
                             struct.struct_types.append(member_type[:-1])
@@ -524,10 +513,8 @@ class StructUnionParser(PreProcessor):
                     struct_info = struct_info.strip()  # This is necessary
                     tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
                     if tmp:  # filter the empty list
-                        member_type = tmp[0][0]
-                        member_name = tmp[0][1]
-                        member_type = member_type.strip()
-                        member_name = member_name.strip()
+                        member_type = tmp[0][0].strip()
+                        member_name = tmp[0][1].strip()
                         # find the pointer, this part only support 1st order pointer
                         if member_type.endswith('*'):
                             struct.struct_types.append(member_type[:-1])
@@ -1086,13 +1073,14 @@ class ArrayParser(PreProcessor):
                     fp.write(f'{arr.arr_name} = {arr.arr_val}\n\n')
 
 
-class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
+class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, ArrayParser):
     """
     Major class of the final parser
     Parse the header files in the include path and store the customized variable types in python format.
     """
     def __init__(self):
         FunctionParser.__init__(self)
+        TypeDefParser.__init__(self)
 
     def __call__(self):
         """
@@ -1102,8 +1090,8 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         if h_files_to_parse:            # Use user settings
             for file_path in h_files_to_parse:
                 self.h_files.extend(glob.glob(file_path))
-        else:                           # search all the header files in src in default
-            for root, dirs, files in os.walk('src'):
+        else:                           # search all the header files in prj in default
+            for root, dirs, files in os.walk('prj'):
                 for file in files:
                     if file.endswith('.h'):
                         file_path = os.path.join(root, file)
@@ -1120,8 +1108,8 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
         if h_files_to_wrap:            # Use user settings
             for file_path in h_files_to_wrap:
                 self.h_files.extend(glob.glob(file_path))
-        else:                           # search all the header files in src in default
-            for root, dirs, files in os.walk('src'):
+        else:                           # search all the header files in prj in default
+            for root, dirs, files in os.walk('prj'):
                 for file in files:
                     if file.endswith('.h'):
                         file_path = os.path.join(root, file)
@@ -1160,7 +1148,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
     def generate_func_ptr_dict(self):
         # parse header files
         for lines in self.intermediate_h_files:
-            m = re.compile(r'typedef\s*([\w*]+)\s+\(\*([\w]+)\)([^;]+);')
+            m = re.compile(r'typedef\s*([\w*]+)\s*\(\*([\w]+)\)([^;]+);')
             contents = re.findall(m, lines)
             for content in contents:            # For each function pointer
                 val = list()
@@ -1178,7 +1166,7 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
 
                 key = content[1]
                 args = re.findall(r'([\w*]+)\s+([*\w\[\]]+)?', content[2])
-                for arg in args:                # For each parameter
+                for arg in args:                                    # For each parameter
                     param_info = arg
                     param = self._Param(param_info=param_info)
                     param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
@@ -1193,7 +1181,8 @@ class Parser(StructUnionParser, EnumParser, FunctionParser, ArrayParser):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    #logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
