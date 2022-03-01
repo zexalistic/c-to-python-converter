@@ -5,7 +5,8 @@
     @email: lyihao@marvell.com
     @python: 3.7
     @latest modification: 2021-12-30
-    @version: 2.0.4
+    @version: 2.0.5
+    @update: fix bug in parsing function pointer
     @comment: rm additional newlines; todo-solve #if a>0; to-do add debug info
 """
 
@@ -203,12 +204,17 @@ class PreProcessor(CommonParser):
 
     # TODO： #define function macro
     # TODO: #if a > 0; 用re.S 但是还是得搞清楚先
+    # TODO： #define function macro
+    # TODO: #if a > 0
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
             lines = '\n' + self.intermediate_h_files[i]         # append a pseudo new line here to make sure there must be some code before #ifdef
-            m = re.compile(r'#if\s+defined\s+\w+\b\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', re.S)
-            blocks = re.split(m, lines)
-            criterion = re.findall(m, lines)
+            blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
+            criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
+            criterion = [tmpCter.strip() for tmpCter in criterion]
+            tmpPattern = re.compile(r'(\d+)[uU][lL]')
+            criterion = [tmpPattern.subn(r'\1', tmpCter)[0] for tmpCter in criterion]
+            criterion = list(filter(None, criterion))
             flag_stack = deque()
             flag = True
             flag_if_else = True
@@ -246,17 +252,28 @@ class PreProcessor(CommonParser):
                     flag_stack.append(flag)
                     tmp = re.search(r'#if\s+(.+)', criterion[idx])
                     expr = tmp.group(1)
-                    expr = re.sub('!', '~', expr)
-                    tmp = re.findall(r'defined\s+\w+\b', expr)
+
+                    expr = expr.replace("!", " not ")
+                    expr = expr.replace("not =", "!=")
+                    expr = expr.replace("||", " or ")
+                    expr = expr.replace("&&", " and ")
+                    expr = expr.replace("defined", " ")
+                    tmp = re.findall(r'\w*', expr)
+                    tmp = [tmpe if tmpe != 'and' and tmpe != 'or' and tmpe != 'not' else '' for tmpe in tmp]
+                    tmp = [tmpe if not tmpe.isdigit() else None for tmpe in tmp]
+                    tmp = list(filter(None, tmp))
+                    tmp = sorted(tmp, key=len, reverse=True)
                     for item in tmp:
                         if self.macro_dict.__contains__(item):
-                            expr = re.sub(item, '1', expr)
+                            if isinstance(self.macro_dict[item], int):
+                                expr = re.sub(item, str(self.macro_dict[item]), expr)
+                            elif isinstance(self.macro_dict[item], str):
+                                if not self.macro_dict[item].isdigit():
+                                    expr = re.sub(item, '1', expr)
+                                else:
+                                    expr = re.sub(item, self.macro_dict[item], expr)
                         else:
                             expr = re.sub(item, '0', expr)
-                    tmp = re.findall(r'\b\w+\b', expr)
-                    for item in tmp:
-                        if self.macro_dict.__contains__(item):
-                            expr = re.sub(item, self.macro_dict[item], expr)
 
                     val = 1
                     try:
@@ -276,17 +293,27 @@ class PreProcessor(CommonParser):
                         continue
                     tmp = re.search(r'#elif\s+(.+)', criterion[idx])
                     expr = tmp.group(1)
-                    expr = re.sub('!', '~', expr)
-                    tmp = re.findall(r'defined\s+\w+\b', expr)
+
+                    expr = expr.replace("!", " not ")
+                    expr = expr.replace("||", " or ")
+                    expr = expr.replace("&&", " and ")
+                    expr = expr.replace("defined", " ")
+                    tmp = re.findall(r'\w*', expr)
+                    tmp = [tmpe if tmpe != 'and' and tmpe != 'or' and tmpe != 'not' else '' for tmpe in tmp]
+                    tmp = [tmpe if not tmpe.isdigit() else None for tmpe in tmp]
+                    tmp = list(filter(None, tmp))
+                    tmp = sorted(tmp, key=len, reverse=True)
                     for item in tmp:
                         if self.macro_dict.__contains__(item):
-                            expr = re.sub(item, '1', expr)
+                            if isinstance(self.macro_dict[item], int):
+                                expr = re.sub(item, str(self.macro_dict[item]), expr)
+                            elif isinstance(self.macro_dict[item], str):
+                                if not self.macro_dict[item].isdigit():
+                                    expr = re.sub(item, '1', expr)
+                                else:
+                                    expr = re.sub(item, self.macro_dict[item], expr)
                         else:
                             expr = re.sub(item, '0', expr)
-                    tmp = re.findall(r'\b\w+\b', expr)
-                    for item in tmp:
-                        if self.macro_dict.__contains__(item):
-                            expr = re.sub(item, self.macro_dict[item], expr)
 
                     val = 1
                     try:
@@ -794,6 +821,25 @@ class FunctionParser(PreProcessor):
                     ret.append(param.arg_name)
             return ', '.join(ret)
 
+    def parse_func_parameters(self, content: str) -> list:
+        param_list = list()
+        param_infos = re.sub(r'\n', '', content)            # remove\n in parameters
+        if not param_infos or param_infos.strip() == 'void':
+            return param_list
+        else:
+            param_infos = param_infos.split(',')
+            for param_info in param_infos:
+                param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info)
+                if not param_info:
+                    return param_list
+                else:
+                    param_info = param_info.groups()            #TODO: fix bug
+                param = self._Param(param_info=param_info)
+                param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
+                param_list.append(param)
+
+        return param_list
+
     def generate_func_list_from_h_files(self):
         """
         parse all the header files in h_file list
@@ -863,13 +909,7 @@ class FunctionParser(PreProcessor):
                     func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
                     if func.ret_type in self.enum_class_name_list:
                         func.ret_type = 'c_int'
-                    param_infos = re.sub(r'[\n()]', '', content[2])                          # remove () and \n in parameters
-                    param_infos = param_infos.split(',')
-                    for param_info in param_infos:
-                        param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
-                        param = self._Param(param_info=param_info)
-                        param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
-                        func.parameters.append(param)
+                    func.parameters = self.parse_func_parameters(content[2])
                     func.header_file = os.path.basename(c_file)[:-2]
                     self.func_list.append(func)
 
@@ -1115,8 +1155,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
                         file_path = os.path.join(root, file)
                         self.h_files.append(file_path)
 
+        self.pre_process()
         self.generate_func_list_from_h_files()
-        # self.generate_func_list_from_c_files()
         self.write_funcs_to_wrapper()
 
     def parse(self):
@@ -1148,9 +1188,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
     def generate_func_ptr_dict(self):
         # parse header files
         for lines in self.intermediate_h_files:
-            m = re.compile(r'typedef\s*([\w*]+)\s*\(\*([\w]+)\)([^;]+);')
-            contents = re.findall(m, lines)
-            for content in contents:            # For each function pointer
+            lines = re.findall(r'typedef\s+(\w+)\s*\(\*([\w]+)\)\s*\((.*?)\)\s*;', lines, re.S)
+            for content in lines:            # For each function pointer
                 val = list()
                 ret_type = content[0]
                 if '*' in ret_type:
@@ -1165,11 +1204,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
                     val.append(f'{ret_type}')
 
                 key = content[1]
-                args = re.findall(r'([\w*]+)\s+([*\w\[\]]+)?', content[2])
-                for arg in args:                                    # For each parameter
-                    param_info = arg
-                    param = self._Param(param_info=param_info)
-                    param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
+                param_list = self.parse_func_parameters(content[2])
+                for param in param_list:
                     if param.arg_type in self.enum_class_name_list:
                         param.arg_type = 'c_int'
                     if param.arg_pointer_flag:
@@ -1181,12 +1217,12 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
-    #logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
-    logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
 
-    # from output.enum_class import *
-    # from output.structure_class import *
-    # parser.write_testcase()
+    from output.enum_class import *
+    from output.structure_class import *
+    parser.write_testcase()
