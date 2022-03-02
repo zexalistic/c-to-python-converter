@@ -5,8 +5,8 @@
 + <span id="output">**output**</span>:
     + **enum_class.py** : Conversion result of C Enumeration type
     + **structure_class.py** : Conversion result of C Structure and Union type
-    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)  
     + **python_API.py** : Conversion result of C functions
+    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)
     + **testcase.py**: Auto-generated testcases (Optional, turned off in default)
 + **main.py** 
 + **config.json** : Advanced settings
@@ -14,10 +14,10 @@
 
 
 ### How to use
-1. Copy your source code into **src** folder
+1. Copy your source code into **prj** folder
 2. Add [__declspec(dllexport)](#add_pre) before the definition of C APIs in header files.
 3. Add "#define MACSECLIB_API __declspec(dllexport)" in one of your header file
-4. Edit [config.json](#edit_config) for advance settings. 
+4. Edit [config.json](#edit_config) for advance settings. (Optional) 
 5. Run main.py
 6. Check the result in [output](#output). 
 
@@ -36,7 +36,7 @@
 ### Limitation
 + Do not support nested citation or definition. 
    
-   e.g. a is a structure whose member is another structure; b is an alias of c which is an alias of d.
+   e.g. **a** is a structure whose member is another structure; **b** is an alias of **c** which is an alias of **d**.
    
 + Regard all 'void' as 'int' at present version.
    
@@ -46,15 +46,13 @@
 ### TO-DO List in next version - Easy
 + \#if !defined(xx) && !defined(xx)
 
-+ POINTER(void)
++ POINTER(void) substitued as c_void_p
 
 + Add debugging info about which file it belongs to.
 
 + Remove func header
 
 + Add the comment of function before the API
-
-+ Rename 'src' as 'prj'
 
 + Add how to use customized path in Readme
 

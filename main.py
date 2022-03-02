@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2021-12-30
-    @version: 2.0.5
-    @update: fix bug in parsing function pointer
+    @latest modification: 2022-03-02
+    @version: 2.0.6
+    @update: enhance parameter parsing ability; update code structure
     @comment: rm additional newlines; todo-solve #if a>0; to-do add debug info
 """
 
@@ -478,6 +478,50 @@ class StructUnionParser(PreProcessor):
         def __getitem__(self, item):
             return self.struct_members[item], self.struct_types[item], self.struct_types[item], self.member_idc[item]
 
+    def parse_struct_member_info(self, struct: _Struct, struct_infos: list):
+        for struct_info in struct_infos:
+            struct_info = struct_info.strip()  # This is necessary
+            tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
+            if tmp:  # filter the empty list
+                member_type = tmp[0][0].strip()
+                member_name = tmp[0][1].strip()
+                # find the pointer, this part only support 1st order pointer
+                if member_type.endswith('*'):
+                    struct.struct_types.append(member_type[:-1].strip())
+                    struct.struct_members.append(member_name)
+                    struct.pointer_flags.append(True)
+                elif member_name.endswith('[]'):
+                    struct.struct_types.append(member_type)
+                    struct.struct_members.append(member_name[:-2].strip())
+                    struct.pointer_flags.append(True)
+                elif member_name.startswith('*'):
+                    struct.struct_types.append(member_type)
+                    struct.struct_members.append(member_name[1:].strip())
+                    struct.pointer_flags.append(True)
+                else:
+                    struct.struct_types.append(member_type)
+                    struct.struct_members.append(member_name)
+                    struct.pointer_flags.append(False)
+        self.struct_class_list.append(struct)
+        self.struct_class_name_list.append(struct.struct_name)
+
+    def check_typedef_struct(self, struct: _Struct, lines: str):
+        # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
+        struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
+        if struct_ptr:
+            self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
+        alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
+        if alias:
+            struct_alias = copy.deepcopy(struct)
+            struct_alias.struct_name = alias[0]
+            self.struct_class_list.append(struct_alias)
+            self.struct_class_name_list.append(alias[0])
+
+            # find if there's any structure pointer
+            struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
+            if struct_ptr:
+                self.struct_pointer_dict[struct_ptr[0]] = alias[0]
+
     def generate_struct_union_class_list(self):
         """
         Parse header files and save structure/union into a list of class, which records their information
@@ -485,7 +529,7 @@ class StructUnionParser(PreProcessor):
         for lines in self.intermediate_h_files:
             structs = re.findall(r'typedef struct[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
             struct_flags = [False] * len(structs)
-            unions = re.findall(r'typedef union[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef struct _a{}a, *ap;
+            unions = re.findall(r'typedef union[\s\w]*{([^{}]+)}([\s\w,*]+);\s', lines)             # match: typedef union _a{}a, *ap;
             union_flags = [True] * len(unions)
             contents = structs + unions
             flags = struct_flags + union_flags
@@ -498,31 +542,8 @@ class StructUnionParser(PreProcessor):
                     self.struct_pointer_dict[struct_pointer_name] = struct_name
                 struct.struct_name = struct_name
                 struct_infos = content[0].split(';')
-                for struct_info in struct_infos:
-                    struct_info = struct_info.strip()                                                  # This is necessary
-                    tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)                        # parse the members of structure
-                    if tmp:        # filter the empty list
-                        member_type = tmp[0][0].strip()
-                        member_name = tmp[0][1].strip()
-                        # find the pointer, this part only support 1st order pointer
-                        if member_type.endswith('*'):
-                            struct.struct_types.append(member_type[:-1])
-                            struct.struct_members.append(member_name)
-                            struct.pointer_flags.append(True)
-                        elif member_name.endswith('[]'):
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name[:-2])
-                            struct.pointer_flags.append(True)
-                        elif member_name.startswith('*'):
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name[1:])
-                            struct.pointer_flags.append(True)
-                        else:
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name)
-                            struct.pointer_flags.append(False)
-                self.struct_class_list.append(struct)
-                self.struct_class_name_list.append(struct.struct_name)
+                self.parse_struct_member_info(struct, struct_infos)
+                self.check_typedef_struct(struct, lines)
 
             structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
             struct_flags = [False] * len(structs)
@@ -536,47 +557,8 @@ class StructUnionParser(PreProcessor):
                 struct_name = re.sub(r'\s', '', content[0])
                 struct.struct_name = struct_name
                 struct_infos = content[1].split(';')
-                for struct_info in struct_infos:
-                    struct_info = struct_info.strip()  # This is necessary
-                    tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
-                    if tmp:  # filter the empty list
-                        member_type = tmp[0][0].strip()
-                        member_name = tmp[0][1].strip()
-                        # find the pointer, this part only support 1st order pointer
-                        if member_type.endswith('*'):
-                            struct.struct_types.append(member_type[:-1])
-                            struct.struct_members.append(member_name)
-                            struct.pointer_flags.append(True)
-                        elif member_name.endswith('[]'):
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name[:-2])
-                            struct.pointer_flags.append(True)
-                        elif member_name.startswith('*'):
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name[1:])
-                            struct.pointer_flags.append(True)
-                        else:
-                            struct.struct_types.append(member_type)
-                            struct.struct_members.append(member_name)
-                            struct.pointer_flags.append(False)
-                self.struct_class_list.append(struct)
-                self.struct_class_name_list.append(struct.struct_name)
-
-                # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
-                struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
-                if struct_ptr:
-                    self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
-                alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
-                if alias:
-                    struct_alias = copy.deepcopy(struct)
-                    struct_alias.struct_name = alias[0]
-                    self.struct_class_list.append(struct_alias)
-                    self.struct_class_name_list.append(alias[0])
-
-                    # find if there's any structure pointer
-                    struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
-                    if struct_ptr:
-                        self.struct_pointer_dict[struct_ptr[0]] = alias[0]
+                self.parse_struct_member_info(struct, struct_infos)
+                self.check_typedef_struct(struct, lines)
 
     def sort_structs(self):
         sorted_queue = deque()
@@ -780,7 +762,8 @@ class EnumParser(PreProcessor):
         with open(os.path.join('output', 'enum_class.py'), 'w') as f:
             f.write('from enum import Enum, unique, IntEnum\n\n')
             for enum in self.enum_class_list:
-                f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
+                f.write(f'class {enum.enum_name}(IntEnum):\n')
+                # f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
                 for member, val in enum:
                     f.write(f'    {member} = {val}\n')
                 f.write('\n\n')
@@ -828,12 +811,20 @@ class FunctionParser(PreProcessor):
             return param_list
         else:
             param_infos = param_infos.split(',')
-            for param_info in param_infos:
-                param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info)
-                if not param_info:
-                    return param_list
+            for i, param_info in enumerate(param_infos):
+                # Parameter has two forms: (1) int func(void, int); (2) int func(void a, int b);
+                # We need to check both
+                param_info = rm_ornamental_keywords(param_info).strip()
+                param_info_clean = re.sub(r'[\[*\]]', '', param_info)
+                if self.exception_dict.__contains__(param_info_clean) \
+                    or self.basic_type_dict.__contains__(param_info_clean) \
+                    or param_info_clean in self.enum_class_name_list \
+                    or param_info_clean in self.struct_class_name_list \
+                    or self.struct_pointer_dict.__contains__(param_info_clean) \
+                    or self.func_pointer_dict.__contains__(param_info_clean):
+                    param_info = (param_info, f'arg{i}')
                 else:
-                    param_info = param_info.groups()            #TODO: fix bug
+                    param_info = re.search(r'([*\w\s]+)\s+([\[\]*\w]+)', param_info).groups()
                 param = self._Param(param_info=param_info)
                 param.arg_type, param.arg_pointer_flag = self.convert_to_ctypes(param.arg_type, param.arg_pointer_flag)
                 param_list.append(param)
@@ -1217,12 +1208,12 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
-    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    #logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
 
-    from output.enum_class import *
-    from output.structure_class import *
-    parser.write_testcase()
+    # from output.enum_class import *
+    # from output.structure_class import *
+    # parser.write_testcase()
