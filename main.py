@@ -975,9 +975,9 @@ class FunctionParser(PreProcessor):
     def write_testcase_header(self):
         with open(self.testcase, 'w') as fp:
             fp.write('import os\nimport logging\nimport time\nimport traceback\n')
-            fp.write('from enum_class import *\n')
-            fp.write('from structure_class import *\n')
-            fp.write(f'from {self.wrapper[:-3]} import *\n')
+            fp.write('from output.enum_class import *\n')
+            fp.write('from output.structure_class import *\n')
+            fp.write(f'from output.{self.wrapper[:-3]} import *\n')
             fp.write('\n')
             fp.write('if __name__ == "__main__":\n')
 
@@ -987,7 +987,6 @@ class FunctionParser(PreProcessor):
         """
         self.write_testcase_header()
 
-        basic_type_list = ['c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64', 'c_uint', 'c_int', 'c_float', 'c_double', 'c_char']
         with open(self.testcase, 'a') as fp:
             for func in self.func_list:
                 arg_names = list()
@@ -999,7 +998,7 @@ class FunctionParser(PreProcessor):
                     # common param
                     if arg_type == 'c_void_p':
                         pass
-                    elif arg_type in basic_type_list:
+                    elif arg_type in self.key_ctypes:
                         init_param_infos.append(f'    {arg_name} = 1\n')  # maybe we could iterate/ lane ranges from 0, 1, 2, 3
                         if param.arg_pointer_flag:
                             init_param_infos.append(f'    {arg_name}_p = {arg_type}({arg_name})\n')
@@ -1113,7 +1112,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         FunctionParser.__init__(self)
         TypeDefParser.__init__(self)
 
-    def __call__(self):
+    def __call__(self, skip_output=False):
         """
         Main function when you use this parser
         """
@@ -1132,7 +1131,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
         self.parse()
 
-        self.write_to_file()
+        if not skip_output:
+            self.write_to_file()
 
         self.h_files = list()
         h_files_to_wrap = self.env.get('h_files_containing_definition_of_api', list())
