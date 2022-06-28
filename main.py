@@ -4,10 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-03-02
-    @version: 2.0.6
-    @update: enhance parameter parsing ability; update code structure
-    @comment: rm additional newlines; todo-solve #if a>0; to-do add debug info
+    @latest modification: 2022-06-28
+    @version: 2.0.7
+    @update: rewrite #if logic; test on x9340 project
 """
 
 import glob
@@ -147,6 +146,9 @@ class PreProcessor(CommonParser):
         self.intermediate_h_files = list()  # list of intermediate h files
         self.macro_func_dict = dict()   # key = name of macro func, value = macro func class
 
+        # C operator dictionary in #if clause
+        self.c_operator_dict = {'&&': ' and ', '||': ' or ', 'defined': ''}
+
     class _MacroFunc:
         """
         Class containing information of a macro function
@@ -208,138 +210,86 @@ class PreProcessor(CommonParser):
     # TODO: #if a > 0
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
-            lines = '\n' + self.intermediate_h_files[i]         # append a pseudo new line here to make sure there must be some code before #ifdef
+            lines = '\n' + self.intermediate_h_files[i] + '\n'        # append a pseudo new line here to make sure there must be some code before #ifdef and after #endif
+            # comment: len(blocks) = len(criterion)+1;
             blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = [tmpCter.strip() for tmpCter in criterion]
             tmpPattern = re.compile(r'(\d+)[uU][lL]')
             criterion = [tmpPattern.subn(r'\1', tmpCter)[0] for tmpCter in criterion]
             criterion = list(filter(None, criterion))
-            flag_stack = deque()
-            flag = True
-            flag_if_else = True
-            new_lines = ''
-            if blocks:
-                tmp = blocks.pop(0)
-                self.get_macro(tmp)
-                new_lines += tmp
 
-            for idx in range(len(criterion)):
+            # Process the first code block here. It should always be valid.
+            code_block = blocks.pop(0)
+            self.get_macro(code_block)
+            new_lines = code_block          # save result
+            flag_stack = deque()  # use a stack to remember whether the former criterion is valid
+            flag_stack.append(True)
+            is_ignore_else = True  # whether we should ignore the #else clause or not
+
+            while criterion:
+                criteria = criterion.pop(0)
+                code_block = blocks.pop(0)
                 # check ifndef, ifdef, if, if defined
-                if criterion[idx].startswith('#ifndef'):
-                    tmp = re.search(r'#ifndef\s+(\w+)', criterion[idx])
-                    macro = tmp.group(1)
+                if criteria.startswith('#ifndef'):
+                    macro = re.search(r'#ifndef\s+(\w+)', criteria).group(1)
+                    flag = (not self.macro_dict.__contains__(macro)) and flag_stack[-1]   # the validation before and after criteria both affect
                     flag_stack.append(flag)
-                    if self.macro_dict.__contains__(macro):
-                        flag = False
-                        flag_if_else = False
-                    else:
-                        flag = True and flag_stack[-1]
-                        flag_if_else = True
-                elif criterion[idx].startswith('#ifdef'):
-                    tmp = re.search(r'#ifdef\s+(\w+)', criterion[idx])
-                    macro = tmp.group(1)
-                    flag_stack.append(flag)
-                    if self.macro_dict.__contains__(macro):
-                        flag = True and flag_stack[-1]
-                        flag_if_else = True
-                    else:
-                        flag = False
-                        flag_if_else = False
-                elif criterion[idx].startswith('#endif'):
-                    flag = flag_stack.pop()
-                elif criterion[idx].startswith('#if'):
-                    flag_stack.append(flag)
-                    tmp = re.search(r'#if\s+(.+)', criterion[idx])
-                    expr = tmp.group(1)
+                    is_ignore_else = not self.macro_dict.__contains__(macro)
 
-                    expr = expr.replace("!", " not ")
-                    expr = expr.replace("not =", "!=")
-                    expr = expr.replace("||", " or ")
-                    expr = expr.replace("&&", " and ")
-                    expr = expr.replace("defined", " ")
-                    tmp = re.findall(r'\w*', expr)
-                    tmp = [tmpe if tmpe != 'and' and tmpe != 'or' and tmpe != 'not' else '' for tmpe in tmp]
-                    tmp = [tmpe if not tmpe.isdigit() else None for tmpe in tmp]
-                    tmp = list(filter(None, tmp))
-                    tmp = sorted(tmp, key=len, reverse=True)
-                    for item in tmp:
-                        if self.macro_dict.__contains__(item):
-                            if isinstance(self.macro_dict[item], int):
-                                expr = re.sub(item, str(self.macro_dict[item]), expr)
-                            elif isinstance(self.macro_dict[item], str):
-                                if not self.macro_dict[item].isdigit():
-                                    expr = re.sub(item, '1', expr)
-                                else:
-                                    expr = re.sub(item, self.macro_dict[item], expr)
-                        else:
-                            expr = re.sub(item, '0', expr)
+                elif criteria.startswith('#ifdef'):
+                    macro = re.search(r'#ifdef\s+(\w+)', criteria).group(1)
+                    flag = self.macro_dict.__contains__(macro) and flag_stack[-1]   # the validation before and after criteria both affect
+                    flag_stack.append(flag)
+                    is_ignore_else = self.macro_dict.__contains__(macro)
 
-                    val = 1
+                elif criteria.startswith('#endif'):
+                    flag_stack.pop()             # deque pop from right
+                    is_ignore_else = True
+                    flag = flag_stack[-1]
+
+                elif criteria.startswith('#if') or criteria.startswith('#elif'):
+                    if criteria.startswith('#if'):
+                        expr = re.search(r'#if\s+(.+)', criteria).group(1)
+                    else:
+                        if is_ignore_else:
+                            continue
+                        expr = re.search(r'#elif\s+(.+)', criteria).group(1)
+                        flag_stack.pop()
+                    for key, val in self.c_operator_dict.items():       # replace c operator with python operator
+                        expr = expr.replace(key, val)
+                    for macro, val in self.macro_dict.items():          # replace macro with it original value
+                        expr = re.sub(r'\b{}\b'.format(macro), '{}'.format(val), expr)
+
                     try:
-                        val = eval(expr)
+                        if eval(expr):
+                            flag = flag_stack[-1]
+                            is_ignore_else = True
+                        else:
+                            flag = False
+                            is_ignore_else = False
+                        flag_stack.append(flag)
+                    except NameError:
+                        flag = False                                     # not defined macro
+                        is_ignore_else = False
+                        flag_stack.append(flag)
                     except Exception:
-                        logging.warning(f'Undefined expression: {expr}')
+                        logging.error(f'Error in parsing macro {expr}')
 
-                    if val:
-                        flag = True and flag_stack[-1]
-                        flag_if_else = True
-                    else:
-                        flag = False
-                        flag_if_else = False
-
-                elif criterion[idx].startswith('#elif'):
-                    if flag_if_else:
-                        continue
-                    tmp = re.search(r'#elif\s+(.+)', criterion[idx])
-                    expr = tmp.group(1)
-
-                    expr = expr.replace("!", " not ")
-                    expr = expr.replace("||", " or ")
-                    expr = expr.replace("&&", " and ")
-                    expr = expr.replace("defined", " ")
-                    tmp = re.findall(r'\w*', expr)
-                    tmp = [tmpe if tmpe != 'and' and tmpe != 'or' and tmpe != 'not' else '' for tmpe in tmp]
-                    tmp = [tmpe if not tmpe.isdigit() else None for tmpe in tmp]
-                    tmp = list(filter(None, tmp))
-                    tmp = sorted(tmp, key=len, reverse=True)
-                    for item in tmp:
-                        if self.macro_dict.__contains__(item):
-                            if isinstance(self.macro_dict[item], int):
-                                expr = re.sub(item, str(self.macro_dict[item]), expr)
-                            elif isinstance(self.macro_dict[item], str):
-                                if not self.macro_dict[item].isdigit():
-                                    expr = re.sub(item, '1', expr)
-                                else:
-                                    expr = re.sub(item, self.macro_dict[item], expr)
-                        else:
-                            expr = re.sub(item, '0', expr)
-
-                    val = 1
-                    try:
-                        val = eval(expr)
-                    except:
-                        logging.error(f'Un-parsable  expression: {expr}')
-
-                    if val:
-                        flag = True and flag_stack[-1]
-                        flag_if_else = True
-                    else:
-                        flag = False
-                        flag_if_else = False
-                elif criterion[idx].startswith('#else'):
-                    if flag_if_else:
+                elif criteria.startswith('#else'):
+                    if is_ignore_else:
                         continue
                     else:
-                        flag_if_else = True
-                        flag = True and flag_stack[-1]
+                        flag_stack.pop()
+                        is_ignore_else = True
+                        flag = flag_stack[-1]
+                        flag_stack.append(flag)
                 else:
-                    logging.error(f"Unable to process : {criterion[idx]}")
+                    logging.error(f"Unable to parse preprocessing clause : {criteria}")
 
-                tmp = blocks.pop(0)
                 if flag:
-                    self.get_macro(tmp)
-                    new_lines += tmp
+                    self.get_macro(code_block)
+                    new_lines += code_block
 
             self.intermediate_h_files[i] = new_lines
 
@@ -1208,8 +1158,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
-    #logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
-    logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
