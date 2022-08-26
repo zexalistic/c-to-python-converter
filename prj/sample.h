@@ -43,19 +43,20 @@ enum MONTHS {						// Parsable
 	FEB
 };
 
-//struct _MY_STRUCT{					// Parsable
-//	MY_INT a[MAX];
-//	MY_BOOL b;
-//	int* c;
-//};
-//
-//typedef struct _MY_STRUCT MY_STRUCT;		// Parsable
-//typedef MY_STRUCT* MY_STRUCT_PTR;			// This will not be parsed.
-//typedef MY_STRUCT YOUR_STRUCT;				// This will not be parsed. We do not support nested citation.
+struct _MY_STRUCT{					// Parsable
+	MY_INT a[MAX];
+	MY_BOOL b;
+	int* c;
+};
+
+typedef int* INT_PTR;
+typedef struct _MY_STRUCT MY_STRUCT;		// Parsable
+typedef MY_STRUCT* MY_STRUCT_PTR;			// Parsable
+typedef MY_STRUCT YOUR_STRUCT;				// Parsable
 
 typedef MY_INT (*MY_FUNC_PTR)(				// Parsable
 	MY_BOOL a,
-	MONTHS m
+	MY_STRUCT_PTR p
 	);
 
 union YOUR_UNION {                            // Parsable
