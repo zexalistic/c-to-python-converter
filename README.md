@@ -6,8 +6,8 @@
     + **enum_class.py** : Conversion result of C Enumeration type
     + **structure_class.py** : Conversion result of C Structure and Union type
     + **python_API.py** : Conversion result of C functions
-    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off in default)
-    + **testcase.py**: Auto-generated testcases (Optional, turned off in default)
+    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off by default)
+    + **testcase.py**: Auto-generated testcases (Optional, turned off by default)
 + **main.py** 
 + **config.json** : Advanced settings
 + **debug.log** : Recording debugging information
@@ -33,18 +33,13 @@
 + Searching the header files in project folder automatically
 
 
-### Limitation
-+ Do not support nested citation or definition. 
+### Limitation 
++ **void** is not available in python. They are all regarded as **int**.
    
-   e.g. **a** is a structure whose member is another structure; **b** is an alias of **c** which is an alias of **d**.
-   
-+ Regard all 'void' as 'int' at present version.
-   
-+ Parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
++ Redundant parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
 
-### TO-DO List in next version - Easy
-+ \#if !defined(xx) && !defined(xx)
+### Future work
 
 + POINTER(void) substitued as c_void_p
 
@@ -56,7 +51,6 @@
 
 + Add how to use customized path in Readme
 
-### TO-DO List in next version - Hard
 + \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
    
 + C function parser. {} within {}
@@ -110,7 +104,3 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 + Advanced Function
   
    See source code or config.json by yourself.
-
-
-
-
