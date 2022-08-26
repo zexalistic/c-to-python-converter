@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-06-28
-    @version: 2.0.7
-    @update: rewrite #if logic; test on x9340 project
+    @latest modification: 2022-08-26
+    @version: 2.0.9
+    @update: able to parse nested citation cases; fix recognition failure in basic type pointer; remove structure pointer dict
 """
 
 import glob
@@ -39,10 +39,6 @@ def rm_c_comments(lines: str) -> str:
     """
     lines = re.sub(r'\n{3,}', '\n\n', lines)
 
-    return lines
-
-
-def rm_ornamental_keywords(lines: str) -> str:
     """
     remove ornamental keywords such as auto, volatile, static etc.
     """
@@ -70,7 +66,6 @@ class CommonParser:
         self.h_files = list()                           # list of header files
         self.c_files = list()                           # list of C files to parse
 
-        self.struct_pointer_dict = dict()               # key = name of struct pointer, value = name of struct
         self.struct_class_name_list = list()            # name list of structure class
         self.enum_class_name_list = list()
         self.enum_class_list = list()
@@ -78,11 +73,12 @@ class CommonParser:
         self.struct_class_list = list()                 # list of structure
         self.array_list = list()                        # list of large C arrays
         self.func_name_list = list()                    # names of functions in wrapper
+        self.struct_union_type_dict = dict()
+        self.basic_type_dict = dict()
 
         # Read from json
         with open('config.json', 'r') as fp:
             self.env = json.load(fp)
-        self.basic_type_dict = self.env.get('basic_type_dict', dict())
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
         self.func_header = self.env.get('func_header', '__declspec(dllexport)')
@@ -104,6 +100,16 @@ class CommonParser:
             self.arg_type = arg_info[0].strip()
             self.arg_name = arg_info[1]
 
+    class _Type:
+        """
+        Class used in TypeDefParser
+        """
+
+        def __init__(self, name: str, base_type: str, is_ptr: bool):
+            self.name = name
+            self.base_type = base_type
+            self.is_ptr = is_ptr
+
     class _DebugInfo:
         def __init__(self):
             self.filename = ''
@@ -113,19 +119,18 @@ class CommonParser:
         """
         Convert customized variable type to ctypes according to the type dict
         """
-        arg_type = rm_ornamental_keywords(arg_type)
-
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
         elif self.basic_type_dict.__contains__(arg_type):
-            arg_type = self.basic_type_dict[arg_type]
+            arg_ptr_flag = self.basic_type_dict[arg_type].is_ptr
+            arg_type = self.basic_type_dict[arg_type].base_type
         elif arg_type in self.enum_class_name_list:
             pass
         elif arg_type in self.struct_class_name_list:
             pass
-        elif self.struct_pointer_dict.__contains__(arg_type):
-            arg_type = self.struct_pointer_dict[arg_type]
-            arg_ptr_flag = True
+        elif self.struct_union_type_dict.__contains__(arg_type):
+            arg_ptr_flag = self.struct_union_type_dict[arg_type].is_ptr
+            arg_type = self.struct_union_type_dict[arg_type].base_type
         elif self.func_pointer_dict.__contains__(arg_type):
             arg_type = f'CFUNCTYPE({self.func_pointer_dict[arg_type]})'
             arg_ptr_flag = True
@@ -175,7 +180,6 @@ class PreProcessor(CommonParser):
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_c_comments(lines)
-                lines = rm_ornamental_keywords(lines)
                 lines = rm_space_before_bracket(lines)
                 self.intermediate_h_files.append(lines)
 
@@ -346,64 +350,53 @@ class TypeDefParser(PreProcessor):
     def __init__(self):
         super().__init__()
 
-        # Read from json
-        with open('config.json', 'r') as fp:
-            self.env = json.load(fp)
-        self.basic_type_dict = self.env.get('basic_type_dict', dict())
-
-        self.type_map_tree = dict()                        # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+        self.c_type_map_tree = dict()               # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
+        self.base_struct_union_types_list = list()
 
         # Basic C types, pre-loading here
-        self.keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+        self.basic_c_type_keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
                      'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
                      'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
-        self.key_ctypes = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
+        self.basic_ctypes_lib_vars = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
                            'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
                            'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
-        for key in self.keys:
-            self.type_map_tree[key] = list()
+        self.init_basic_type_dict()
 
-    def get_basic_type_dict(self):
-        self.generate_basic_type_dict()
-        self.write_basic_type_dict_from_tree()
+    def init_basic_type_dict(self):
+        for key, key_ctype in zip(self.basic_c_type_keys, self.basic_ctypes_lib_vars):
+            ttype = self._Type(name=key, base_type=key_ctype, is_ptr=False)
+            self.basic_type_dict.setdefault(key, ttype)
+        ttype = self._Type(name='void', base_type='c_int', is_ptr=False)
+        self.basic_type_dict.setdefault('void', ttype)
 
-    def generate_basic_type_dict(self):
+    def generate_typedef_mapping_dict(self):
         """
         Generate basic type dict from header files
         """
-        # Manually add basic types here
-        self.type_map_tree['int'].append('void')
-
-        # parse customized C types in header files
         for lines in self.intermediate_h_files:
-            contents = re.findall(r'typedef\s+([\w\s]+)\s+(\w+);', lines)
+            contents = re.findall(r'typedef\s+([\w\s*]+)\s+(\w+);', lines)
             for content in contents:
-                original_type = content[0].strip()
+                original_type = content[0]
                 customized_type = content[1]
-                # remove redundant keywords
-                if 'struct' in original_type:
-                    continue
-                original_type = rm_ornamental_keywords(original_type)
-                if not self.search_tree(original_type, customized_type):
-                    logging.warning(f' typedef {original_type} {customized_type}; Not found!! You may need to manually add it in config.json, '
-                                    f'or this is a nested calling which we do not support\n')
+                ttype = self._Type(name=customized_type, base_type=original_type, is_ptr=False)
+                if '*' in original_type:
+                    original_type = original_type.strip('*')
+                    ttype.is_ptr = True
 
-    def search_tree(self, node, value):
-        if node in self.keys:
-            self.type_map_tree[node].append(value)
-            return node
-        else:
-            for key in self.keys:
-                if node in self.type_map_tree[key]:
-                    self.type_map_tree[key].append(value)
-                    return key
-            return None             # Not found any of this type
-
-    def write_basic_type_dict_from_tree(self):
-        for key, key_ctype in zip(self.keys, self.key_ctypes):
-            self.basic_type_dict.setdefault(key, key_ctype)
-            for node in self.type_map_tree[key]:
-                self.basic_type_dict.setdefault(node, key_ctype)
+                if 'struct' in original_type or 'union' in original_type:
+                    original_type = re.sub(r'\bstruct\b', '', original_type)
+                    original_type = re.sub(r'\bunion\b', '', original_type)
+                    ttype.base_type = original_type.strip()
+                original_type = original_type.strip()
+                if original_type in self.basic_type_dict.keys():        # parse basic c types
+                    ttype.base_type = self.basic_type_dict[original_type].base_type
+                    ttype.is_ptr = ttype.is_ptr or self.basic_type_dict[original_type].is_ptr
+                    self.basic_type_dict[customized_type] = ttype
+                else:                                                   # parse struct/union typedef
+                    if original_type in self.struct_union_type_dict.keys():
+                        ttype.base_type = self.struct_union_type_dict[original_type].base_type
+                        ttype.is_ptr = ttype.is_ptr or self.struct_union_type_dict[original_type].is_ptr
+                    self.struct_union_type_dict[customized_type] = ttype
 
 
 class StructUnionParser(PreProcessor):
@@ -455,22 +448,22 @@ class StructUnionParser(PreProcessor):
         self.struct_class_list.append(struct)
         self.struct_class_name_list.append(struct.struct_name)
 
-    def check_typedef_struct(self, struct: _Struct, lines: str):
-        # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
-        struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
-        if struct_ptr:
-            self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
-        alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
-        if alias:
-            struct_alias = copy.deepcopy(struct)
-            struct_alias.struct_name = alias[0]
-            self.struct_class_list.append(struct_alias)
-            self.struct_class_name_list.append(alias[0])
-
-            # find if there's any structure pointer
-            struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
-            if struct_ptr:
-                self.struct_pointer_dict[struct_ptr[0]] = alias[0]
+    # def check_typedef_struct(self, struct: _Struct, lines: str):
+    #     # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
+    #     struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
+    #     if struct_ptr:
+    #         self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
+    #     alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
+    #     if alias:
+    #         struct_alias = copy.deepcopy(struct)
+    #         struct_alias.struct_name = alias[0]
+    #         self.struct_class_list.append(struct_alias)
+    #         self.struct_class_name_list.append(alias[0])
+    #
+    #         # find if there's any structure pointer
+    #         struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
+    #         if struct_ptr:
+    #             self.struct_pointer_dict[struct_ptr[0]] = alias[0]
 
     def generate_struct_union_class_list(self):
         """
@@ -489,11 +482,12 @@ class StructUnionParser(PreProcessor):
                 struct_name = re.sub(r'\s', '', content[1])
                 if re.search(r',\s*\*', struct_name):
                     struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
-                    self.struct_pointer_dict[struct_pointer_name] = struct_name
+                    ttype = self._Type(name=struct_pointer_name, base_type=struct_name, is_ptr=True)
+                    self.struct_union_type_dict[struct_pointer_name] = ttype
                 struct.struct_name = struct_name
                 struct_infos = content[0].split(';')
                 self.parse_struct_member_info(struct, struct_infos)
-                self.check_typedef_struct(struct, lines)
+                # self.check_typedef_struct(struct, lines)
 
             structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
             struct_flags = [False] * len(structs)
@@ -508,7 +502,7 @@ class StructUnionParser(PreProcessor):
                 struct.struct_name = struct_name
                 struct_infos = content[1].split(';')
                 self.parse_struct_member_info(struct, struct_infos)
-                self.check_typedef_struct(struct, lines)
+                # self.check_typedef_struct(struct, lines)
 
     def sort_structs(self):
         sorted_queue = deque()
@@ -543,7 +537,6 @@ class StructUnionParser(PreProcessor):
         Since the member type of some structure is another class member, the order of definition of class has to be arranged so that structure_class.py
         can be imported as a python module.
         """
-        order_idx = [f'{i}' for i in range(len(self.struct_class_list))]
         updated_struct_list = list()
 
         # convert struct_type to ctype
@@ -764,13 +757,12 @@ class FunctionParser(PreProcessor):
             for i, param_info in enumerate(param_infos):
                 # Parameter has two forms: (1) int func(void, int); (2) int func(void a, int b);
                 # We need to check both
-                param_info = rm_ornamental_keywords(param_info).strip()
-                param_info_clean = re.sub(r'[\[*\]]', '', param_info)
+                param_info_clean = re.sub(r'[\[*\]]', '', param_info.strip())
                 if self.exception_dict.__contains__(param_info_clean) \
                     or self.basic_type_dict.__contains__(param_info_clean) \
                     or param_info_clean in self.enum_class_name_list \
                     or param_info_clean in self.struct_class_name_list \
-                    or self.struct_pointer_dict.__contains__(param_info_clean) \
+                    or self.struct_union_type_dict.__contains__(param_info_clean) \
                     or self.func_pointer_dict.__contains__(param_info_clean):
                     param_info = (param_info, f'arg{i}')
                 else:
@@ -835,7 +827,6 @@ class FunctionParser(PreProcessor):
                 contents = rm_c_comments(contents)
                 contents = self.replace_macro(contents)
                 contents = rm_space_before_bracket(contents)
-                contents = rm_ornamental_keywords(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
                 for content in contents:
@@ -1046,7 +1037,7 @@ class ArrayParser(PreProcessor):
 
     def write_arr_into_py(self):
         if self.array_list:
-            with open('c_arrays.py', 'w') as fp:
+            with open(os.path.join('output', 'c_arrays.py'), 'w') as fp:
                 for arr in self.array_list:
                     arr_idc = '*'.join(arr.arr_idc)
                     fp.write(f'# Array size: {arr_idc}\n')
@@ -1106,7 +1097,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         self.get_macro_func()
         self.check_macro()
-        self.get_basic_type_dict()
+        self.generate_typedef_mapping_dict()
         self.generate_enum_class_list()
         self.extend_macro()
         for i, lines in enumerate(self.intermediate_h_files):
