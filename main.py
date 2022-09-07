@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-08-26
-    @version: 2.0.9
-    @update: able to parse nested citation cases; fix recognition failure in basic type pointer; remove structure pointer dict
+    @latest modification: 2022-09-7
+    @version: 2.0.11
+    @update: fix function parser bug; update readme and config.json
 """
 
 import glob
@@ -80,7 +80,7 @@ class CommonParser:
         with open('config.json', 'r') as fp:
             self.env = json.load(fp)
         self.exception_dict = self.env.get('exception_dict', dict())
-        self.func_pointer_dict = self.env.get('func_pointer_dict', dict())
+        self.func_pointer_dict = self.env.get('func_pointer_dict', dict())   # key: str, item: list of parameters
         self.func_header = self.env.get('func_header', '__declspec(dllexport)')
         self.macro_dict = self.env.get('predefined_macro_dict', dict())
 
@@ -132,7 +132,7 @@ class CommonParser:
             arg_ptr_flag = self.struct_union_type_dict[arg_type].is_ptr
             arg_type = self.struct_union_type_dict[arg_type].base_type
         elif self.func_pointer_dict.__contains__(arg_type):
-            arg_type = f'CFUNCTYPE({self.func_pointer_dict[arg_type]})'
+            arg_type = f"CFUNCTYPE({', '.join(self.func_pointer_dict[arg_type])})"
             arg_ptr_flag = True
         else:
             logging.warning(f'Unrecognized type! Type name: {arg_type}.')
@@ -190,17 +190,14 @@ class PreProcessor(CommonParser):
         macro_list = re.findall(r'#define\s+(\w+)\b(.*)\n', lines)
         for item in macro_list:
             val = item[1].strip()
-            if val.startswith('0x'):
-                if val.endswith('UL'):
-                    val = val[:-2]
-                elif val.endswith('U') or val.endswith('L'):
-                    val = val[:-1]
 
-                try:
-                    self.macro_dict[item[0]] = eval(val)
-                except Exception:
-                    traceback.print_exc()
-                    logging.error(f'Do not support complex hex compression: #define {item[0]} {val}')
+            # process digital numbers
+            digit = re.match(r'(0x)*(\d+)[uUlLfF]', val)
+            if digit:
+                if digit.group(1) == '0x':
+                    self.macro_dict[item[0]] = int(digit.group(2), 16)
+                else:
+                    self.macro_dict[item[0]] = int(digit.group(1), 10)
             else:
                 self.macro_dict[item[0]] = val
 
@@ -219,7 +216,7 @@ class PreProcessor(CommonParser):
             blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = [tmpCter.strip() for tmpCter in criterion]
-            tmpPattern = re.compile(r'(\d+)[uU][lL]')
+            tmpPattern = re.compile(r'(\d+)[uUlLfF]')
             criterion = [tmpPattern.subn(r'\1', tmpCter)[0] for tmpCter in criterion]
             criterion = list(filter(None, criterion))
 
@@ -448,23 +445,6 @@ class StructUnionParser(PreProcessor):
         self.struct_class_list.append(struct)
         self.struct_class_name_list.append(struct.struct_name)
 
-    # def check_typedef_struct(self, struct: _Struct, lines: str):
-    #     # find if there is any "typedef struct _struct_var struct_var;" or "typedef _struct_var* struct_var_ptr"; if so, add them to list
-    #     struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(struct.struct_name), lines)
-    #     if struct_ptr:
-    #         self.struct_pointer_dict[struct_ptr[0]] = struct.struct_name
-    #     alias = re.findall(r'typedef struct {} (\w+);'.format(struct.struct_name), lines)
-    #     if alias:
-    #         struct_alias = copy.deepcopy(struct)
-    #         struct_alias.struct_name = alias[0]
-    #         self.struct_class_list.append(struct_alias)
-    #         self.struct_class_name_list.append(alias[0])
-    #
-    #         # find if there's any structure pointer
-    #         struct_ptr = re.findall(r'typedef {}\s*\*\s*(\w+);'.format(alias[0]), lines)
-    #         if struct_ptr:
-    #             self.struct_pointer_dict[struct_ptr[0]] = alias[0]
-
     def generate_struct_union_class_list(self):
         """
         Parse header files and save structure/union into a list of class, which records their information
@@ -483,7 +463,7 @@ class StructUnionParser(PreProcessor):
                 if re.search(r',\s*\*', struct_name):
                     struct_name, struct_pointer_name = re.search(r'(\w+),\s*\*(\w+)', struct_name).groups()
                     ttype = self._Type(name=struct_pointer_name, base_type=struct_name, is_ptr=True)
-                    self.struct_union_type_dict[struct_pointer_name] = ttype
+                    self.struct_union_type_dict[struct_pointer_name] = ttype            # store struct pointer
                 struct.struct_name = struct_name
                 struct_infos = content[0].split(';')
                 self.parse_struct_member_info(struct, struct_infos)
@@ -502,7 +482,6 @@ class StructUnionParser(PreProcessor):
                 struct.struct_name = struct_name
                 struct_infos = content[1].split(';')
                 self.parse_struct_member_info(struct, struct_infos)
-                # self.check_typedef_struct(struct, lines)
 
     def sort_structs(self):
         sorted_queue = deque()
@@ -513,20 +492,28 @@ class StructUnionParser(PreProcessor):
         sorted_queue = list(sorted_queue)
         unique_queue = list(set(sorted_queue))
         unique_queue.sort(key=sorted_queue.index)
+        self.struct_class_list = unique_queue
+        self.struct_class_name_list = [struct.struct_name for struct in self.struct_class_list]
 
     def sort_structs_dfs(self, item: _Struct, sorted_queue: deque):
-        calling_list = list()
-        for struct_type in item.struct_types:
-            if struct_type in self.struct_class_name_list:
-                calling_list.append(struct_type)
-
         sorted_queue.appendleft(item)
-        for struct_type in calling_list:
+        for struct_type in item.struct_types:
+            struct_type = re.sub(r'^POINTER\(', '', struct_type)  # Remove POINTER decoration
+            struct_type = re.sub(r'\)$', '', struct_type)  # Remove POINTER decoration
             if struct_type in self.struct_class_name_list:
                 idx = self.struct_class_name_list.index(struct_type)
                 dependent_struct = self.struct_class_list[idx]
                 sorted_queue.appendleft(dependent_struct)
                 sorted_queue = self.sort_structs_dfs(dependent_struct, sorted_queue)
+            elif self.func_pointer_dict.__contains__(struct_type):
+                for param in self.func_pointer_dict[struct_type]:
+                    param = re.sub(r'^POINTER\(', '', param)  # Remove POINTER decoration
+                    param = re.sub(r'\)$', '', param)  # Remove POINTER decoration
+                    if param in self.struct_class_name_list:
+                        idx = self.struct_class_name_list.index(param)
+                        dependent_struct = self.struct_class_list[idx]
+                        sorted_queue.appendleft(dependent_struct)
+                        sorted_queue = self.sort_structs_dfs(dependent_struct, sorted_queue)
 
         return sorted_queue
 
@@ -539,6 +526,8 @@ class StructUnionParser(PreProcessor):
         """
         updated_struct_list = list()
 
+        # Sort the structure class
+        self.sort_structs()
         # convert struct_type to ctype
         for i, struct in enumerate(self.struct_class_list):
             updated_struct_members = list()
@@ -584,9 +573,6 @@ class StructUnionParser(PreProcessor):
             struct.struct_types = updated_struct_types
             struct.struct_members = updated_struct_members
             updated_struct_list.append(struct)
-
-        # Sort the structure class
-        self.sort_structs()
 
     def write_structure_class_into_py(self):
         """
@@ -1057,7 +1043,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         Main function when you use this parser
         """
-        h_files_to_parse = self.env.get('dependent_header_file_list', list())
+        h_files_to_parse = self.env.get('header_files', list())
         if h_files_to_parse:            # Use user settings
             for file_path in h_files_to_parse:
                 self.h_files.extend(glob.glob(file_path))
@@ -1075,19 +1061,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         if not skip_output:
             self.write_to_file()
 
-        self.h_files = list()
-        h_files_to_wrap = self.env.get('h_files_containing_definition_of_api', list())
-        if h_files_to_wrap:            # Use user settings
-            for file_path in h_files_to_wrap:
-                self.h_files.extend(glob.glob(file_path))
-        else:                           # search all the header files in prj in default
-            for root, dirs, files in os.walk('prj'):
-                for file in files:
-                    if file.endswith('.h'):
-                        file_path = os.path.join(root, file)
-                        self.h_files.append(file_path)
-
-        self.pre_process()
         self.generate_func_list_from_h_files()
         self.write_funcs_to_wrapper()
 
@@ -1105,7 +1078,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
             self.intermediate_h_files[i] = lines
         self.generate_func_ptr_dict()
         self.generate_struct_union_class_list()
-        # TODO: update func ptr dict
         self.convert_structure_class_to_ctypes()
         self.generate_array_list()
 
@@ -1144,7 +1116,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
                         val.append(f'POINTER({param.arg_type})')
                     else:
                         val.append(f'{param.arg_type}')
-                val = ', '.join(val)
                 self.func_pointer_dict.setdefault(key, val)
 
 
