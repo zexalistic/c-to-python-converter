@@ -2,13 +2,11 @@
 	"#": "==================================================Basic Settings===============================================================",
 	"func_header": "FUNC_PREFIX",
 	"is_multiple_file" : false,
-	"#dependent_header_file_list": ["prj\\*.h"],
-	"#h_files_containing_definition_of_api": [],
+	"header_files": ["prj\\*.h"],
 
 	"#": "========================================Advanced Settings==============================================================================",
-	"basic_type_dict": {},
 	"exception_dict": {},
-	"predefined_macro_dict": {"NULL": "0", "IN": "", "OUT":  "", "INOUT": ""},
+	"predefined_macro_dict": {"NULL": "0"},
 
 	"#": "========================================Help Desk==============================================================================",
 	"#": "@is_multiple_file: write all wrappers in one file or in multiple files",
