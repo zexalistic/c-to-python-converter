@@ -13,3 +13,5 @@ FUNC_PREFIX MY_INT hello_world(MY_BOOL something);
 MY_INT hello_world_2(MY_BOOL something);
 
 FUNC_PREFIX MY_INT hello_world_3();
+
+FUNC_PREFIX DFUNC(MY_INT, MacsecInit(MY_INT gg));
