@@ -10,16 +10,15 @@
     + **testcase.py**: Auto-generated testcases (Optional, turned off by default)
 + **main.py** 
 + **config.json** : Advanced settings
-+ **debug.log** : Recording debugging information
++ <span id="debug_log">**debug.log**</span> : Recording debugging information
 
 
 ### How to use
 1. Copy your source code into **prj** folder
 2. Add [__declspec(dllexport)](#add_pre) before the definition of C APIs in header files.
 3. Add "#define MACSECLIB_API __declspec(dllexport)" in one of your header file
-4. Edit [config.json](#edit_config) for advance settings. (Optional) 
-5. Run main.py
-6. Check the result in [output](#output). 
+4. Run main.py
+5. Check the result in [output](#output) and [debug_log](#debug_log). 
 
 ### What this tool can do
 + Parsing C comment
@@ -78,19 +77,16 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ### <span id="edit_config">Manual of config.json </span>
 
-+ Add dependent header file list.
++ Add path of header files.
   
-  These files contain all your customized data structure. [structure_class.py](#output) and
+  These files contain all your customized data structure and APIs. [structure_class.py](#output) and
   [enum_class.py](#output) are  generated from these files. Customized types such as "typedef my_int int;" 
   are also parsed from these files. 
   
   If there is any unrecognized type due to lack of dependent files, the parser will skip those types and
   not parse them. Thus, you may either replace those types manually in the [output files](#output) (not recommned)
    or update the file list and run again.
-     > "dependent_header_file_list": ["your_prj_folder\\\a.h", ""your_prj_folder\\\lib\\\\*.h""],
-
-+ Add file list containing the definition of functions that your want to convert.
-  > "h_files_containing_definition_of_api": ["your_prj_folder\\\a.h", "your_prj_folder\\\b.h"],
+     > "header_files": ["your_prj_folder\\\a.h", ""your_prj_folder\\\lib\\\\*.h""],
   
   
 + Add exception dictionary.
@@ -101,6 +97,10 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
   >"exception_dict": {"Device_Handle_t": "c_void_p"},
   
 
-+ Advanced Function
++ Advanced Settings
   
-   See source code or config.json by yourself.
+   Edit [config.json](#edit_config) 
+
+
+
+
