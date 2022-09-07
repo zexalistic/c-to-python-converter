@@ -54,6 +54,8 @@ typedef struct _MY_STRUCT MY_STRUCT;		// Parsable
 typedef MY_STRUCT* MY_STRUCT_PTR;			// Parsable
 typedef MY_STRUCT YOUR_STRUCT;				// Parsable
 
+#define DFUNC(ret, cmd) ret _FUNC(cmd)
+
 typedef MY_INT (*MY_FUNC_PTR)(				// Parsable
 	MY_BOOL a,
 	MY_STRUCT_PTR p
