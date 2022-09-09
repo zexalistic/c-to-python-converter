@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-09-7
-    @version: 2.0.11
-    @update: fix function parser bug; update readme and config.json
+    @latest modification: 2022-09-09
+    @version: 2.0.12
+    @update: rm function header
 """
 
 import glob
@@ -20,7 +20,7 @@ import copy
 from collections import deque
 
 
-def rm_c_comments(lines: str) -> str:
+def rm_miscellenous(lines: str) -> str:
     """
     remove C comments in the file to parse
     """
@@ -47,14 +47,11 @@ def rm_c_comments(lines: str) -> str:
     for key in redundant_keyword_list:
         lines = re.sub(r'\b{}\b'.format(key), '', lines)
 
-    return lines
-
-
-def rm_space_before_bracket(lines: str) -> str:
     """
     remove space before bracket, which will save the work to match arrays
     """
     lines = re.sub(r'\s+\[', '[', lines)
+
     return lines
 
 
@@ -81,7 +78,6 @@ class CommonParser:
             self.env = json.load(fp)
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())   # key: str, item: list of parameters
-        self.func_header = self.env.get('func_header', '__declspec(dllexport)')
         self.macro_dict = self.env.get('predefined_macro_dict', dict())
 
     class _Param:
@@ -179,8 +175,7 @@ class PreProcessor(CommonParser):
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
-                lines = rm_c_comments(lines)
-                lines = rm_space_before_bracket(lines)
+                lines = rm_miscellenous(lines)
                 self.intermediate_h_files.append(lines)
 
     def get_macro(self, lines: str):
@@ -201,9 +196,9 @@ class PreProcessor(CommonParser):
             else:
                 self.macro_dict[item[0]] = val
 
-        # skip function header
-        if self.macro_dict.__contains__(self.func_header):
-            self.macro_dict.pop(self.func_header)
+        # # skip function header
+        # if self.macro_dict.__contains__(self.func_header):
+        #     self.macro_dict.pop(self.func_header)
 
     # TODO： #define function macro
     # TODO: #if a > 0; 用re.S 但是还是得搞清楚先
@@ -310,7 +305,7 @@ class PreProcessor(CommonParser):
         include_list = list()
         with open(h_file, 'r') as fp:
             lines = fp.read()
-            lines = rm_c_comments(lines)
+            lines = rm_miscellenous(lines)
             include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
 
         sorted_queue.appendleft(h_file)
@@ -767,12 +762,8 @@ class FunctionParser(PreProcessor):
         """
         for lines, h_file in zip(self.intermediate_h_files, self.h_files):
             # This pattern matching rule may have bugs in other cases
-            if self.func_header:
-                # Another way is to use [^;] to replace .*?
-                lines = re.findall(r'{}\s+([*\w]+)\s+(\w+)\s*\((.*?)\)\s*;'.format(self.func_header), lines, re.S)       # find all functions
-            else:
-                lines = re.findall(r'([*\w]+)\s+(\w+)([^;]+);', lines)  # find all functions
-                logging.error("Lack of function header may very hopefully cause parsing errors.")
+            # Another way is to use [^;] to replace .*?
+            lines = re.findall(r'__declspec\(dllexport\)\s+([*\w]+)\s+(\w+)\s*\((.*?)\)\s*;', lines, re.S)  # find all exported functions
             # For each function
             for content in lines:
                 if content[1] not in self.func_name_list:
@@ -810,9 +801,8 @@ class FunctionParser(PreProcessor):
         for c_file in self.c_files:
             with open(c_file) as fp:
                 contents = fp.read()
-                contents = rm_c_comments(contents)
+                contents = rm_miscellenous(contents)
                 contents = self.replace_macro(contents)
-                contents = rm_space_before_bracket(contents)
                 # This pattern matching rule may have bugs in other cases
                 contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
                 for content in contents:

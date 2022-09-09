@@ -1,7 +1,7 @@
 ## Converting C API to python lib
 
 ### File structure
-+ **prj** : folder which contains the code of your project
++ **prj** : folder which contains the code of your project by default
 + <span id="output">**output**</span>:
     + **enum_class.py** : Conversion result of C Enumeration type
     + **structure_class.py** : Conversion result of C Structure and Union type
@@ -15,10 +15,8 @@
 
 ### How to use
 1. Copy your source code into **prj** folder
-2. Add [__declspec(dllexport)](#add_pre) before the definition of C APIs in header files.
-3. Add "#define MACSECLIB_API __declspec(dllexport)" in one of your header file
-4. Run main.py
-5. Check the result in [output](#output) and [debug_log](#debug_log). 
+2. Run main.py
+3. Check the result in [output](#output) and [debug_log](#debug_log). 
 
 ### What this tool can do
 + Parsing C comment
@@ -44,11 +42,7 @@
 
 + Add debugging info about which file it belongs to.
 
-+ Remove func header
-
 + Add the comment of function before the API
-
-+ Add how to use customized path in Readme
 
 + \#define as a simple function, such as \#define MAX(a, b) ( (a) > (b) (a) : (b) )
    
@@ -77,7 +71,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ### <span id="edit_config">Manual of config.json </span>
 
-+ Add path of header files.
++ Add your header files
   
   These files contain all your customized data structure and APIs. [structure_class.py](#output) and
   [enum_class.py](#output) are  generated from these files. Customized types such as "typedef my_int int;" 
