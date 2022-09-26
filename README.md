@@ -1,4 +1,20 @@
 ## Converting C API to python lib
+This project converts C APIs to python classes, which enables programmers to use and test the C APIs in python.
+
+The basic idea is to parse variable types, functions, and their corresponding parameters from header files, 
+and rewrite them as python *ctypes* classes. 
+When the number of class is tremendous, we need this tool to do it automatically.
+
+*ctypes* is a standard python library which is used to call C codes. 
+The C code is firstly compiled as a dynamic library(*.dll), and then is imported as a python class. 
+Users are able to call the C functions from that class. 
+For details, please refer to below websites.
+
+Python Ctypes document:
+https://docs.python.org/3/library/ctypes.html
+
+This blog introduces how to use python ctypes:
+https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ### File structure
 + **prj** : folder which contains the code of your project by default
@@ -7,7 +23,7 @@
     + **structure_class.py** : Conversion result of C Structure and Union type
     + **python_API.py** : Conversion result of C functions
     + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off by default)
-    + **testcase.py**: Auto-generated testcases (Optional, turned off by default)
+    + **testcase.py**: Auto-generated testcases (Optional, tur12ned off by default)
 + **main.py** 
 + **config.json** : Advanced settings
 + <span id="debug_log">**debug.log**</span> : Recording debugging information
@@ -50,23 +66,6 @@
 
 + Recover file structure of the C project
 
-
-### Brief introduction of ctypes
-ctypes is a standard library of python to connect C with python. You need to first generate a dll/so file 
-from C project and use *ctypes.CDLL* to call those C functions. 
-
-__declspec(dllexport) is an internal C prefix which implies this function will be export to dll.
-
-Since the data structure in C and python are different, you need a wrapper as an interface to make the API more "pythonic". That's why I develop this 
-wrapper auto-generator.
-
-### For more Information
-
-Python Ctypes document:
-https://docs.python.org/3/library/ctypes.html
-
-This blog introduces how to use python ctypes:
-https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 
 ### <span id="edit_config">Manual of config.json </span>

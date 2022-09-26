@@ -2,13 +2,9 @@
 	"#": "==================================================Basic Settings===============================================================",
 	"is_multiple_file" : false,
 	"header_files": ["prj\\*.h"],
+	"project_folders": ["prj"],
 
 	"#": "========================================Advanced Settings==============================================================================",
 	"exception_dict": {},
-	"predefined_macro_dict": {"NULL": "0"},
-
-	"#": "========================================Help Desk==============================================================================",
-	"#": "@is_multiple_file: write all wrappers in one file or in multiple files",
-	"#": "@predefined_macro_dict: add additional macro definition here",
-	"#": "@basic_type_dict: manually set the mapping relationship from C variable type to python variable type."
+	"predefined_macro_dict": {"NULL": "0"}
 }
