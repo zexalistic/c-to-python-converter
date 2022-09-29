@@ -5,8 +5,8 @@
     @email: lyihao@marvell.com
     @python: 3.7
     @latest modification: 2022-09-27
-    @version: 2.1.0
-    @update: add GUI
+    @version: 2.1.1
+    @update: add GUI advance
 """
 import PySimpleGUI as sg
 import json
@@ -41,15 +41,42 @@ def make_window(theme):
                     enable_events=True)],
          [sg.Button("Add Folder"), sg.Button("Add File"), sg.Button("Delete"), sg.Button("Clear")],
          [sg.ProgressBar(100, orientation='h', size=(20, 20), key='-PROGRESS BAR-'), sg.Button('Convert')]]
-    # logging_layout = [[sg.Text("Debug info")],
-    #                   [sg.Multiline(size=(60, 15), font='Courier 8', expand_x=True, expand_y=True, write_only=True,
-    #                                 reroute_stdout=True, reroute_stderr=True, echo_stdout_stderr=True, autoscroll=True,
-    #                                 auto_refresh=True)]
-    #                   ]
+
+    advance1_layout = [
+            [sg.Text("User defined macros"), sg.Text("  Value of macros")],
+            [sg.Listbox(values=config["predefined_macro_dict"].keys(),
+                        size=(18, 5),
+                        key='-macro keys-',
+                        expand_x=False,
+                        enable_events=True),
+             sg.Listbox(values=config["predefined_macro_dict"].values(),
+                        size=(18, 5),
+                        key='-macro values-',
+                        expand_x=False,
+                        enable_events=True),
+             ],
+             [sg.Button("Add Macro"), sg.Button("Delete Macro"), sg.Button("Clear Macros")]
+        ]
+    advance2_layout = [
+            [sg.Text("Skipped Variable"), sg.Text("     Value of variable")],
+            [sg.Listbox(values=config["exception_dict"].keys(),
+                        size=(18, 5),
+                        key='-skipped keys-',
+                        expand_x=False,
+                        enable_events=True),
+             sg.Listbox(values=config["exception_dict"].values(),
+                        size=(18, 5),
+                        key='-skipped values-',
+                        expand_x=False,
+                        enable_events=True),
+             ],
+            [sg.Button("Add Var"), sg.Button("Delete Var"), sg.Button("Clear Vars")]
+         ]
 
     layout = [[sg.MenubarCustom(menu_def, key='-MENU-', font='Courier 10', tearoff=True)]]
     layout += [[sg.TabGroup([[sg.Tab('Basic', settings_layout),
-                              # sg.Tab('Debug log', logging_layout)
+                              sg.Tab('Advance1', advance1_layout),
+                              sg.Tab('Advance2', advance2_layout),
                               ]], key='-TAB GROUP-', expand_x=True, expand_y=True)
                 ]]
     layout[-1].append(sg.Sizegrip())
@@ -116,6 +143,18 @@ if __name__ == '__main__':
             files = sg.popup_get_file('Choose your file', keep_on_top=True)
             config["header_files"].append(files)
             window['-files and folders-'].update(config["header_files"] + config["project_folders"])
+        elif event == "Add Macro":
+            macro_key = sg.popup_get_text('Input the Macro name', keep_on_top=True)
+            macro_value = sg.popup_get_text('Input the Macro value', keep_on_top=True)
+            config["predefined_macro_dict"].update({macro_key: macro_value})
+            window['-macro keys-'].update(config["predefined_macro_dict"].keys())
+            window['-macro values-'].update(config["predefined_macro_dict"].values())
+        elif event == "Add Var":
+            var_key = sg.popup_get_text('Input the skipped variable name', keep_on_top=True)
+            var_value = sg.popup_get_text('Input the skipped variable value', keep_on_top=True)
+            config["exception_dict"].update({var_key: var_value})
+            window['-skipped keys-'].update(config["exception_dict"].keys())
+            window['-skipped values-'].update(config["exception_dict"].values())
         elif event == "Delete":
             item_chosen = values['-files and folders-'][0]
             if item_chosen in config["header_files"]:
@@ -123,12 +162,30 @@ if __name__ == '__main__':
             else:
                 config["project_folders"].remove(item_chosen)
             window['-files and folders-'].update(config["header_files"] + config["project_folders"])
+        elif event == "Delete Macro":
+            item_chosen = values['-macro keys-'][0]
+            config["predefined_macro_dict"].pop(item_chosen)
+            window['-macro keys-'].update(config["predefined_macro_dict"].keys())
+            window['-macro values-'].update(config["predefined_macro_dict"].values())
+        elif event == "Delete Var":
+            item_chosen = values['-skipped keys-'][0]
+            config["exception_dict"].pop(item_chosen)
+            window['-skipped keys-'].update(config["exception_dict"].keys())
+            window['-skipped values-'].update(config["exception_dict"].values())
         elif event == "Clear":
             config["header_files"] = list()
             config["project_folders"] = list()
             window['-files and folders-'].update(config["header_files"] + config["project_folders"])
+        elif event == "Clear Vars":
+            config["exception_dict"] = dict()
+            window['-skipped keys-'].update(config["exception_dict"].keys())
+            window['-skipped values-'].update(config["exception_dict"].values())
+        elif event == "Clear Macros":
+            config["predefined_macro_dict"] = dict()
+            window['-macro keys-'].update(config["predefined_macro_dict"].keys())
+            window['-macro values-'].update(config["predefined_macro_dict"].values())
         elif event == 'Versions':
-            sg.popup_scrolled(f'Version=2.0.12', keep_on_top=True, non_blocking=True)
+            sg.popup_scrolled(f'Version=2.1.1', keep_on_top=True, non_blocking=True)
 
     window.close()
     exit(0)
