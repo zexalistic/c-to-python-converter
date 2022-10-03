@@ -4,13 +4,14 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-09-27
-    @version: 2.1.1
-    @update: add GUI advance
+    @latest modification: 2022-10-03
+    @version: 2.1.2
+    @update: Update readme; fix bug on gui
 """
 import PySimpleGUI as sg
 import json
 from parse import Parser
+import sys
 
 
 def import_json(config_json:str, config:dict):
@@ -86,6 +87,7 @@ def make_window(theme):
     window.set_min_size(window.size)
     return window
 
+
 txt_about = \
     'This project converts C APIs to python classes, which enables programmers to use and test the C APIs in python.\n\
 The basic idea is to parse variable types, functions, and their corresponding parameters from header files, \
@@ -100,7 +102,7 @@ https://docs.python.org/3/library/ctypes.html\n\
 This blog introduces how to use python ctypes:\n\
 https://www.cnblogs.com/night-ride-depart/p/4907613.html\n'
 
-txt_user_guide = "1.Add files or folders to convert\n" \
+txt_user_guide = "1. Add files or folders to convert\n" \
                  "2. Click Convert Button\n" \
                  "3. Check the log and results in the output folder\n"
 
@@ -110,6 +112,14 @@ if __name__ == '__main__':
         config = json.load(fp)
 
     window = make_window(sg.theme("TealMono"))
+    # The four lines below are for bug removing
+    window['-macro keys-'].update(config["predefined_macro_dict"].keys())
+    window['-macro values-'].update(config["predefined_macro_dict"].values())
+    window['-skipped keys-'].update(config["exception_dict"].keys())
+    window['-skipped values-'].update(config["exception_dict"].values())
+    python_version = sys.version.split(' ')[0]
+    if python_version < '3.7':
+        sg.popup("The GUI may have misplacement issue when python version is 3.6 or below", keep_on_top=True)
     # This is an Event Loop
     while True:
         event, values = window.read(timeout=100)
@@ -185,7 +195,7 @@ if __name__ == '__main__':
             window['-macro keys-'].update(config["predefined_macro_dict"].keys())
             window['-macro values-'].update(config["predefined_macro_dict"].values())
         elif event == 'Versions':
-            sg.popup_scrolled(f'Version=2.1.1', keep_on_top=True, non_blocking=True)
+            sg.popup_scrolled(f'Version=2.1.2', keep_on_top=True, non_blocking=True)
 
     window.close()
     exit(0)

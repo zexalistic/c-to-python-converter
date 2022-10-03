@@ -17,22 +17,29 @@ This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ### File structure
-+ **prj** : folder which contains the code of your project by default
 + <span id="output">**output**</span>:
     + **enum_class.py** : Conversion result of C Enumeration type
     + **structure_class.py** : Conversion result of C Structure and Union type
     + **python_API.py** : Conversion result of C functions
     + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off by default)
     + **testcase.py**: Auto-generated testcases (Optional, tur12ned off by default)
-+ **main.py** 
-+ **config.json** : Advanced settings
++ **parse.py** : major script for conversion
++ **gui.py** : GUI
++ **config.json** : settings stored in json file
 + <span id="debug_log">**debug.log**</span> : Recording debugging information
 
 
 ### How to use
-1. Copy your source code into **prj** folder
-2. Run main.py
-3. Check the result in [output](#output) and [debug_log](#debug_log). 
+1. Run gui.py
+2. add files and folders which contains the files you want to convert
+   ![main_page](img/main_page.png)
+3. For the macros or variables that are not declared in the attached header files,
+but you still want them to be defined in your result, add them in advanced menu.
+   ![advanced](img/advanced.png)
+4. Click convert
+5. Check the result in [output](#output) and [debug_log](#debug_log). 
+6. You can export the settings to json file for future use.
+  ![import](img/import.png)
 
 ### What this tool can do
 + Parsing C comment
@@ -41,7 +48,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 + Parsing function pointer
 + Sorting the converted APIs and classes according to the order of calling, so that the file is executable
 + Getting the header files' dependency
-+ Parsing macros and replace them (* macro function is not ready)
++ Parsing macros and replace them (* macro functions can not be parsed)
 + Parsing preprocessing clause, such as #ifdef, #if etc.
 + Searching the header files in project folder automatically
 
@@ -67,33 +74,7 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 + Recover file structure of the C project
 
 
+### About author
 
-### <span id="edit_config">Manual of config.json </span>
-
-+ Add your header files
-  
-  These files contain all your customized data structure and APIs. [structure_class.py](#output) and
-  [enum_class.py](#output) are  generated from these files. Customized types such as "typedef my_int int;" 
-  are also parsed from these files. 
-  
-  If there is any unrecognized type due to lack of dependent files, the parser will skip those types and
-  not parse them. Thus, you may either replace those types manually in the [output files](#output) (not recommned)
-   or update the file list and run again.
-     > "header_files": ["your_prj_folder\\\a.h", ""your_prj_folder\\\lib\\\\*.h""],
-  
-  
-+ Add exception dictionary.
-  
-  For some complex structures, such as a device handler of a hardware device, you may just want to leave an interface of 
-  void pointer and define that structure in other place. In this case, you should edit the exception dictionary here.
-  
-  >"exception_dict": {"Device_Handle_t": "c_void_p"},
-  
-
-+ Advanced Settings
-  
-   Edit [config.json](#edit_config) 
-
-
-
+email: lyihao@marvell.com
 
