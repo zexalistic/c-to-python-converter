@@ -32,13 +32,16 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 ### How to use
 1. Run gui.py
 2. add files and folders which contains the files you want to convert
+   
    ![main_page](img/main_page.png)
 3. For the macros or variables that are not declared in the attached header files,
 but you still want them to be defined in your result, add them in advanced menu.
+   
    ![advanced](img/advanced.png)
 4. Click convert
 5. Check the result in [output](#output) and [debug_log](#debug_log). 
 6. You can export the settings to json file for future use.
+
   ![import](img/import.png)
 
 ### What this tool can do
