@@ -4,11 +4,12 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-09-27
-    @version: 2.1.0
-    @update: add GUI
+    @latest modification: 2022-10-14
+    @version: 2.1.2
+    @update: fix bug
 """
 
+import glob
 import os
 import re
 import logging
@@ -519,8 +520,6 @@ class StructUnionParser(PreProcessor):
         """
         updated_struct_list = list()
 
-        # Sort the structure class
-        self.sort_structs()
         # convert struct_type to ctype
         for i, struct in enumerate(self.struct_class_list):
             updated_struct_members = list()
@@ -566,6 +565,9 @@ class StructUnionParser(PreProcessor):
             struct.struct_types = updated_struct_types
             struct.struct_members = updated_struct_members
             updated_struct_list.append(struct)
+
+        # Sort the structure class
+        self.sort_structs()
 
     def write_structure_class_into_py(self):
         """
@@ -1024,6 +1026,10 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
     Parse the header files in the include path and store the customized variable types in python format.
     """
     def __init__(self):
+        logging.basicConfig(filename='debug.log',
+                            format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s',
+                            datefmt='%d-%M-%Y %H:%M:%S')
+        # logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
         FunctionParser.__init__(self)
         TypeDefParser.__init__(self)
 
@@ -1033,7 +1039,9 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         h_files_to_parse = self.env.get('header_files', list())
         for file_path in h_files_to_parse:
-            self.h_files.append(os.path.relpath(file_path, os.getcwd()))
+            file_paths = glob.glob(file_path)
+            file_paths = [os.path.relpath(p, os.getcwd()) for p in file_paths]
+            self.h_files.extend(file_paths)
 
         project_folders = self.env.get('project_folders', list())
         for project_folder in project_folders:
@@ -1111,9 +1119,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename='debug.log', format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
-    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
-
     parser = Parser()
     parser()
 
