@@ -16,19 +16,6 @@ https://docs.python.org/3/library/ctypes.html
 This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
-### File structure
-+ <span id="output">**output**</span>:
-    + **enum_class.py** : Conversion result of C Enumeration type
-    + **structure_class.py** : Conversion result of C Structure and Union type
-    + **python_API.py** : Conversion result of C functions
-    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off by default)
-    + **testcase.py**: Auto-generated testcases (Optional, tur12ned off by default)
-+ **parse.py** : major script for conversion
-+ **gui.py** : GUI
-+ **config.json** : settings stored in json file
-+ <span id="debug_log">**debug.log**</span> : Recording debugging information
-
-
 ### How to use
 1. Run gui.py
 2. add files and folders which contains the files you want to convert
@@ -61,6 +48,17 @@ but you still want them to be defined in your result, add them in advanced menu.
    
 + Redundant parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
 
+### File structure
++ <span id="output">**output**</span>:
+    + **enum_class.py** : Conversion result of C Enumeration type
+    + **structure_class.py** : Conversion result of C Structure and Union type
+    + **python_API.py** : Conversion result of C functions
+    + **c_arrays.py** : Conversion result of C large arrays. (Optional, turned off by default)
+    + **testcase.py**: Auto-generated testcases (Optional, tur12ned off by default)
++ **parse.py** : major script for conversion
++ **gui.py** : GUI
++ **config.json** : settings stored in json file
++ <span id="debug_log">**debug.log**</span> : Recording debugging information
 
 ### Future work
 

@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-10-14
-    @version: 2.1.2
-    @update: fix bug
+    @latest modification: 2022-11-25
+    @version: 2.1.4
+    @update: fix program stuck issue when preprocessing fails; fix error in enum parser
 """
 
 import glob
@@ -241,8 +241,11 @@ class PreProcessor(CommonParser):
                 elif criteria.startswith('#endif'):
                     flag_stack.pop()             # deque pop from right
                     is_ignore_else = True
-                    flag = flag_stack[-1]
-
+                    try:
+                        flag = flag_stack[-1]
+                    except IndexError:
+                        traceback.print_exc()
+                        logging.error(f'Error in preprocessing file {self.h_files[i]}.')
                 elif criteria.startswith('#if') or criteria.startswith('#elif'):
                     if criteria.startswith('#if'):
                         expr = re.search(r'#if\s+(.+)', criteria).group(1)
@@ -344,7 +347,7 @@ class TypeDefParser(PreProcessor):
         self.c_type_map_tree = dict()               # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
         self.base_struct_union_types_list = list()
 
-        # Basic C types, pre-loading here
+        # Basic C types, preload here
         self.basic_c_type_keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
                      'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
                      'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
@@ -359,6 +362,10 @@ class TypeDefParser(PreProcessor):
             self.basic_type_dict.setdefault(key, ttype)
         ttype = self._Type(name='void', base_type='c_int', is_ptr=False)
         self.basic_type_dict.setdefault('void', ttype)
+        ttype = self._Type(name='bool', base_type='c_bool', is_ptr=False)
+        self.basic_type_dict.setdefault('bool', ttype)
+        ttype = self._Type(name='unsigned', base_type='c_uint', is_ptr=False)
+        self.basic_type_dict.setdefault('unsigned', ttype)
 
     def generate_typedef_mapping_dict(self):
         """
@@ -625,6 +632,39 @@ class EnumParser(PreProcessor):
         def __getitem__(self, item):
             return self.enum_members[item], self.enum_values[item]
 
+    def parse_enum(self, enum_name:str, enum_infos:str):
+        enum = self._Enum()
+        enum.enum_name = enum_name
+
+        enum_infos = enum_infos.split(',')
+        enum_infos = list(filter(None, enum_infos))
+        default_value = 0
+        for enum_info in enum_infos:
+            if '=' in enum_info:
+                enum_member = enum_info.split('=')[0]
+                enum_value = enum_info.split('=')[1]
+                if enum_value.startswith('0x'):
+                    enum_value = int(enum_value, 16)
+                    default_value = enum_value
+                else:
+                    try:
+                        enum_value = int(enum_value)
+                        default_value = enum_value
+                    except Exception:
+                        traceback.print_exc()
+                        logging.error(f'Error in parsing enum: {enum.enum_name}')
+                        return None
+            else:
+                enum_member = enum_info
+                enum_value = default_value
+
+            default_value += 1
+            enum.enum_members.append(enum_member)
+            enum.enum_values.append(enum_value)
+
+        self.enum_class_list.append(enum)
+        self.enum_class_name_list.append(enum.enum_name)
+
     def generate_enum_class_list(self):
         """
         Parse header files and get enumerate types. Store their information in enum_class
@@ -632,52 +672,16 @@ class EnumParser(PreProcessor):
         for lines in self.intermediate_h_files:
             contents = re.findall(r'typedef enum[^;]+;', lines)  # find all enumerate types
             for content in contents:
-                enum = self._Enum()
                 tmp = re.split(r'[{}]', content)  # split the typedef enum{ *** } name;
                 enum_infos = re.sub(r'\s', '', tmp[1])
-                enum.enum_name = re.sub(r'[\s;]', '', tmp[2])
-                enum_infos = enum_infos.split(',')
-                enum_infos = list(filter(None, enum_infos))
-                for default_value, enum_info in enumerate(enum_infos):
-                    if '=' in enum_info:
-                        enum_member = enum_info.split('=')[0]
-                        enum_value = enum_info.split('=')[1]
-                        if enum_value.startswith('0x'):
-                            enum_value = int(enum_value, 16)
-                    else:
-                        enum_member = enum_info
-                        enum_value = default_value
-                    enum.enum_members.append(enum_member)
-                    enum.enum_values.append(enum_value)
-
-                self.enum_class_list.append(enum)
-                self.enum_class_name_list.append(enum.enum_name)
+                enum_name = re.sub(r'[\s;]', '', tmp[2])
+                self.parse_enum(enum_name, enum_infos)
 
             contents = re.findall(r'enum\s+(\w+)\s*{([^{}]+)};', lines)  # parse another way to define a enum type
             for content in contents:
-                enum = self._Enum()
-                enum.enum_name = content[0]
+                enum_name = content[0]
                 enum_infos = re.sub(r'\s', '', content[1])
-                enum_infos = enum_infos.split(',')
-                enum_infos = list(filter(None, enum_infos))
-                default_value = 0
-                for enum_info in enum_infos:
-                    if '=' in enum_info:
-                        enum_member = enum_info.split('=')[0]
-                        enum_value = enum_info.split('=')[1]
-                        if enum_value.startswith('0x'):
-                            enum_value = int(enum_value, 16)
-                        default_value = enum_value
-                    else:
-                        enum_member = enum_info
-                        enum_value = default_value
-
-                    default_value += 1
-                    enum.enum_members.append(enum_member)
-                    enum.enum_values.append(enum_value)
-
-                self.enum_class_list.append(enum)
-                self.enum_class_name_list.append(enum.enum_name)
+                self.parse_enum(enum_name, enum_infos)
 
     def write_enum_class_into_py(self):
         """
@@ -686,8 +690,8 @@ class EnumParser(PreProcessor):
         with open(os.path.join('output', 'enum_class.py'), 'w') as f:
             f.write('from enum import Enum, unique, IntEnum\n\n')
             for enum in self.enum_class_list:
-                f.write(f'class {enum.enum_name}(IntEnum):\n')
-                # f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
+                # f.write(f'class {enum.enum_name}(IntEnum):\n')
+                f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
                 for member, val in enum:
                     f.write(f'    {member} = {val}\n')
                 f.write('\n\n')
@@ -1029,7 +1033,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         logging.basicConfig(filename='debug.log',
                             format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s',
                             datefmt='%d-%M-%Y %H:%M:%S')
-        # logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
         FunctionParser.__init__(self)
         TypeDefParser.__init__(self)
 
@@ -1119,6 +1122,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
+    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+
     parser = Parser()
     parser()
 

@@ -31,9 +31,6 @@ def make_window(theme):
     right_click_menu_def = [[], ['Versions', 'Exit']]
 
     settings_layout = [
-        # [sg.Checkbox('split the output into multiple files', default=False, k='-CB-')],
-        # [sg.Combo(values=('Combo 1', 'Combo 2', 'Combo 3'), default_value='Combo 1', readonly=False, k='-COMBO-'),
-        #  sg.OptionMenu(values=('Option 1', 'Option 2', 'Option 3'), k='-OPTION MENU-'), ],
         [sg.Text("Files and folders to convert")],
         [sg.Listbox(values=config["header_files"] + config["project_folders"],
                     size=(20, 5),
@@ -117,9 +114,7 @@ if __name__ == '__main__':
     window['-macro values-'].update(config["predefined_macro_dict"].values())
     window['-skipped keys-'].update(config["exception_dict"].keys())
     window['-skipped values-'].update(config["exception_dict"].values())
-    python_version = sys.version.split(' ')[0]
-    if python_version < '3.7':
-        sg.popup("The GUI may have misplacement issue when python version is 3.6 or below", keep_on_top=True)
+
     # This is an Event Loop
     while True:
         event, values = window.read(timeout=100)
