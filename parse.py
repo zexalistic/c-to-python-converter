@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-11-25
-    @version: 2.1.4
-    @update: fix program stuck issue when preprocessing fails; fix error in enum parser
+    @latest modification: 2022-11-28
+    @version: 2.1.5
+    @update: fix bug in function pointer parsing 
 """
 
 import glob
@@ -117,14 +117,14 @@ class CommonParser:
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
         elif self.basic_type_dict.__contains__(arg_type):
-            arg_ptr_flag = self.basic_type_dict[arg_type].is_ptr
+            arg_ptr_flag = self.basic_type_dict[arg_type].is_ptr or arg_ptr_flag
             arg_type = self.basic_type_dict[arg_type].base_type
         elif arg_type in self.enum_class_name_list:
             pass
         elif arg_type in self.struct_class_name_list:
             pass
         elif self.struct_union_type_dict.__contains__(arg_type):
-            arg_ptr_flag = self.struct_union_type_dict[arg_type].is_ptr
+            arg_ptr_flag = self.struct_union_type_dict[arg_type].is_ptr or arg_ptr_flag
             arg_type = self.struct_union_type_dict[arg_type].base_type
         elif self.func_pointer_dict.__contains__(arg_type):
             arg_type = f"CFUNCTYPE({', '.join(self.func_pointer_dict[arg_type])})"
