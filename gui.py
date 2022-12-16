@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-10-03
-    @version: 2.1.2
-    @update: Update readme; fix bug on gui
+    @latest modification: 2022-12-16
+    @version: 2.1.3
+    @update: update button
 """
 import PySimpleGUI as sg
 import json
@@ -14,7 +14,7 @@ from parse import Parser
 import sys
 
 
-def import_json(config_json:str, config:dict):
+def import_json(config_json: str, config: dict):
     with open(config_json, 'r') as fp:
         env = json.load(fp)
     config["exception_dict"].update(env.get('exception_dict', dict()))
@@ -38,9 +38,10 @@ def make_window(theme):
                     expand_x=True,
                     enable_events=True)],
          [sg.Button("Add Folder"), sg.Button("Add File"), sg.Button("Delete"), sg.Button("Clear")],
-         [sg.ProgressBar(100, orientation='h', size=(20, 20), key='-PROGRESS BAR-'), sg.Button('Convert')]]
+         [sg.ProgressBar(100, orientation='h', size=(20, 20), key='-PROGRESS BAR-'), sg.Button('Convert', button_color=('black', 'white'))]]
 
     advance1_layout = [
+            [sg.Text("Pre-defined macros to set:")],
             [sg.Text("User defined macros"), sg.Text("  Value of macros")],
             [sg.Listbox(values=config["predefined_macro_dict"].keys(),
                         size=(18, 5),
@@ -56,6 +57,7 @@ def make_window(theme):
              [sg.Button("Add Macro"), sg.Button("Delete Macro"), sg.Button("Clear Macros")]
         ]
     advance2_layout = [
+            [sg.Text("Enviroment variables to set:")],
             [sg.Text("Skipped Variable"), sg.Text("     Value of variable")],
             [sg.Listbox(values=config["exception_dict"].keys(),
                         size=(18, 5),
@@ -73,8 +75,8 @@ def make_window(theme):
 
     layout = [[sg.MenubarCustom(menu_def, key='-MENU-', font='Courier 10', tearoff=True)]]
     layout += [[sg.TabGroup([[sg.Tab('Basic', settings_layout),
-                              sg.Tab('Advance1', advance1_layout),
-                              sg.Tab('Advance2', advance2_layout),
+                              sg.Tab('Macro', advance1_layout),
+                              sg.Tab('Var', advance2_layout),
                               ]], key='-TAB GROUP-', expand_x=True, expand_y=True)
                 ]]
     layout[-1].append(sg.Sizegrip())
@@ -134,11 +136,11 @@ if __name__ == '__main__':
             sg.popup(txt_user_guide, keep_on_top=True)
         elif event == 'Convert':
             progress_bar = window['-PROGRESS BAR-']
-            for i in range(100):
-                progress_bar.update(current_count=i + 1)
             parser = Parser()
             parser.env = config
             parser()
+            with open('config.json', 'w') as fp:
+                json.dump(config, fp, indent=4)
             sg.popup("Please check debug.log.", keep_on_top=True)
         elif event == "Add Folder":
             folder = sg.popup_get_folder('Choose your folder', keep_on_top=True)

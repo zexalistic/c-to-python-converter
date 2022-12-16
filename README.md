@@ -17,19 +17,17 @@ This blog introduces how to use python ctypes:
 https://www.cnblogs.com/night-ride-depart/p/4907613.html
 
 ### How to use
-1. Run gui.py
-2. add files and folders which contains the files you want to convert
-   
-   ![main_page](img/main_page.png)
-3. For the macros or variables that are not declared in the attached header files,
-but you still want them to be defined in your result, add them in advanced menu.
-   
-   ![advanced](img/advanced.png)
-4. Click convert
-5. Check the result in [output](#output) and [debug_log](#debug_log). 
-6. You can export the settings to json file for future use.
+1. Run gui.py using python 3
+2. add files and folders which contain the files you want to convert
+   ![add_file](img/add_file.png)
+3. For the macros or global variables that are not declared in the attached header files,
+but you still want them to be defined in your result, add them in macro and var menu.
+   ![macro](img/macro.png)
+4. Click convert and get results in output folder
+   ![convert](img/convert.png)
+5. Check errors in debug.log.
 
-  ![import](img/import.png)
+  
 
 ### What this tool can do
 + Parsing C comment

@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-11-28
-    @version: 2.1.5
-    @update: fix bug in function pointer parsing 
+    @latest modification: 2022-12-16
+    @version: 2.1.6
+    @update: update macro parser
 """
 
 import glob
@@ -177,32 +177,41 @@ class PreProcessor(CommonParser):
                 lines = rm_miscellenous(lines)
                 self.intermediate_h_files.append(lines)
 
-    def get_macro(self, lines: str):
+    def parse_macro(self, lines: str):
         """
-        Parse the #define clause and get the macro dictionary
+        Parse the #define clause within lines and append the macros to the macro dictionary
         """
         macro_list = re.findall(r'#define\s+(\w+)\b(.*)\n', lines)
         for item in macro_list:
             val = item[1].strip()
 
-            # process digital numbers
-            digit = re.match(r'(0x)*(\d+)[uUlLfF]', val)
-            if digit:
-                if digit.group(1) == '0x':
-                    self.macro_dict[item[0]] = int(digit.group(2), 16)
-                else:
-                    self.macro_dict[item[0]] = int(digit.group(1), 10)
-            else:
+            if val == '' or val == '__declspec(dllexport)':
                 self.macro_dict[item[0]] = val
+            else:
+                try:
+                    value = eval(val)
+                    if isinstance(value, int) or isinstance(value, float):
+                        self.macro_dict[item[0]] = value
+                    else:
+                        logging.error(f"Error in parsing macro {item[0]}\n")
+                        continue
+                except Exception:
+                    for m, v in self.macro_dict.items():
+                        val = re.sub(r'\b{}\b'.format(m), '{}'.format(v), val)
+                    val = re.sub(r'\b(\d+)[uUlL]+\b', r'\1', val)
+                    val = re.sub(r'\b(0x[\dA-F]+)[uUlL]+\b', r'\1', val)
+                    try:
+                        value = eval(val)
+                        if isinstance(value, int) or isinstance(value, float):
+                            self.macro_dict[item[0]] = value
+                        else:
+                            logging.warning(f"Unable to parse macro, {item[0]}\n")
+                    # TODO: macro function
+                    except Exception:
+                            traceback.print_exc()
+                            logging.warning(f'Unable to parse macro; {item[0]}')
+                            continue
 
-        # # skip function header
-        # if self.macro_dict.__contains__(self.func_header):
-        #     self.macro_dict.pop(self.func_header)
-
-    # TODO： #define function macro
-    # TODO: #if a > 0; 用re.S 但是还是得搞清楚先
-    # TODO： #define function macro
-    # TODO: #if a > 0
     def check_macro(self):
         for i, lines in enumerate(self.intermediate_h_files):
             lines = '\n' + self.intermediate_h_files[i] + '\n'        # append a pseudo new line here to make sure there must be some code before #ifdef and after #endif
@@ -210,13 +219,13 @@ class PreProcessor(CommonParser):
             blocks = re.split(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = re.findall(r'#if\s+defined\s+\w+\b\s*\n|#if.*\s*\n|#elif.*\s*\n|#ifndef\s+\w+\b\s*\n|#if\s+\w+\b\s*\n|#ifdef\s+\w+\b\s*\n|#endif|#else\s*\n|#elif\s+\w+\b\s*\n', lines)
             criterion = [tmpCter.strip() for tmpCter in criterion]
-            tmpPattern = re.compile(r'(\d+)[uUlLfF]')
+            tmpPattern = re.compile(r'(\d+)[uUlL]+')
             criterion = [tmpPattern.subn(r'\1', tmpCter)[0] for tmpCter in criterion]
             criterion = list(filter(None, criterion))
 
             # Process the first code block here. It should always be valid.
             code_block = blocks.pop(0)
-            self.get_macro(code_block)
+            self.parse_macro(code_block)
             new_lines = code_block          # save result
             flag_stack = deque()  # use a stack to remember whether the former criterion is valid
             flag_stack.append(True)
@@ -267,12 +276,10 @@ class PreProcessor(CommonParser):
                             flag = False
                             is_ignore_else = False
                         flag_stack.append(flag)
-                    except NameError:
+                    except Exception:
                         flag = False                                     # not defined macro
                         is_ignore_else = False
                         flag_stack.append(flag)
-                    except Exception:
-                        logging.error(f'Error in parsing macro {expr}')
 
                 elif criteria.startswith('#else'):
                     if is_ignore_else:
@@ -286,7 +293,7 @@ class PreProcessor(CommonParser):
                     logging.error(f"Unable to parse preprocessing clause : {criteria}")
 
                 if flag:
-                    self.get_macro(code_block)
+                    self.parse_macro(code_block)
                     new_lines += code_block
 
             self.intermediate_h_files[i] = new_lines
@@ -329,12 +336,6 @@ class PreProcessor(CommonParser):
             lines = re.sub(r'\b{}\b'.format(macro), '{}'.format(val), lines)
 
         return lines
-
-    def extend_macro(self):
-        # regard Enumerate member as macro here, extend the macro list
-        for enum in self.enum_class_list:
-            for member, val in zip(enum.enum_members, enum.enum_values):
-                self.macro_dict[member] = str(val)
 
 
 class TypeDefParser(PreProcessor):
@@ -632,7 +633,7 @@ class EnumParser(PreProcessor):
         def __getitem__(self, item):
             return self.enum_members[item], self.enum_values[item]
 
-    def parse_enum(self, enum_name:str, enum_infos:str):
+    def parse_enum(self, enum_name: str, enum_infos: str):
         enum = self._Enum()
         enum.enum_name = enum_name
 
@@ -643,17 +644,32 @@ class EnumParser(PreProcessor):
             if '=' in enum_info:
                 enum_member = enum_info.split('=')[0]
                 enum_value = enum_info.split('=')[1]
-                if enum_value.startswith('0x'):
-                    enum_value = int(enum_value, 16)
-                    default_value = enum_value
-                else:
-                    try:
-                        enum_value = int(enum_value)
+
+                try:
+                    value = eval(enum_value)
+                    if isinstance(value, int) or isinstance(value, float):
+                        enum_value = value
                         default_value = enum_value
+                    else:
+                        logging.warning(f"Unable to parse enum {enum_member}\n")
+                        return None
+                except Exception:
+                    for m, v in self.macro_dict.items():
+                        enum_value = re.sub(r'\b{}\b'.format(m), '{}'.format(v), enum_value)
+                    enum_value = re.sub(r'\b(\d+)[uUlL]+\b', r'\1', enum_value)
+                    enum_value = re.sub(r'\b(0x[\dA-F]+)[uUlL]+\b', r'\1', enum_value)
+                    try:
+                        value = eval(enum_value)
+                        if isinstance(value, int) or isinstance(value, float):
+                            enum_value = value
+                            default_value = enum_value
+                        else:
+                            logging.warning(f"Unable to parse enum {enum_member}\n")
+                            return None
                     except Exception:
                         traceback.print_exc()
-                        logging.error(f'Error in parsing enum: {enum.enum_name}')
-                        return None
+                        logging.error(f"Error in parsing enum {enum_member}\n")
+                        continue
             else:
                 enum_member = enum_info
                 enum_value = default_value
@@ -661,6 +677,7 @@ class EnumParser(PreProcessor):
             default_value += 1
             enum.enum_members.append(enum_member)
             enum.enum_values.append(enum_value)
+            self.macro_dict[enum_member] = str(enum_value)          # extend the macro dictionary
 
         self.enum_class_list.append(enum)
         self.enum_class_name_list.append(enum.enum_name)
@@ -741,7 +758,7 @@ class FunctionParser(PreProcessor):
             param_infos = param_infos.split(',')
             for i, param_info in enumerate(param_infos):
                 # Parameter has two forms: (1) int func(void, int); (2) int func(void a, int b);
-                # We need to check both
+                # The if clause below checks these two forms and makes them a united format.
                 param_info_clean = re.sub(r'[\[*\]]', '', param_info.strip())
                 if self.exception_dict.__contains__(param_info_clean) \
                     or self.basic_type_dict.__contains__(param_info_clean) \
@@ -1074,7 +1091,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         self.check_macro()
         self.generate_typedef_mapping_dict()
         self.generate_enum_class_list()
-        self.extend_macro()
         for i, lines in enumerate(self.intermediate_h_files):
             lines = self.replace_macro(lines)
             self.intermediate_h_files[i] = lines
