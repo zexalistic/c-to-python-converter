@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-12-16
-    @version: 2.1.6
-    @update: update macro parser
+    @latest modification: 2022-12-21
+    @version: 2.1.7
+    @update: fix parser disorder issue
 """
 
 import glob
@@ -158,16 +158,16 @@ class PreProcessor(CommonParser):
             self.param_list = list()
             self.value = None           # string representing the value of macro
 
-    def get_macro_func(self):
-        """
-        Parse the #define clause and get the macro function dictionary
-        """
-        for i, lines in enumerate(self.intermediate_h_files):
-            lines = self.intermediate_h_files[i]
-            items = re.findall(r'#define\s+(\w+)\(([\w\s,]+)\)\b(.*)\n', lines)
-            # remember to strip \w\s
-            if items:
-                print(items)
+    # def get_macro_func(self):
+    #     """
+    #     Parse the #define clause and get the macro function dictionary
+    #     """
+    #     for i, lines in enumerate(self.intermediate_h_files):
+    #         lines = self.intermediate_h_files[i]
+    #         items = re.findall(r'#define\s+(\w+)\(([\w\s,]+)\)\b(.*)\n', lines)
+    #         # remember to strip \w\s
+    #         if items:
+    #             print(items)
 
     def pre_process(self):
         self.h_files = self.sort_h_files(self.h_files)
@@ -1071,7 +1071,13 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
                         file_path = os.path.join(root, file)
                         self.h_files.append(os.path.relpath(file_path, os.getcwd()))
 
-        self.h_files = list(set(self.h_files))
+        # Although using set to eliminate repeated files is convenient, the result of set is disordered.
+        # Thus, we manually compare and remove repeated files.
+        tmp_file_list = []
+        for file in self.h_files:
+            if file not in tmp_file_list:
+                tmp_file_list.append(file)
+        self.h_files = tmp_file_list
 
         self.pre_process()
 
@@ -1087,7 +1093,6 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         Parse the header files
         """
-        self.get_macro_func()
         self.check_macro()
         self.generate_typedef_mapping_dict()
         self.generate_enum_class_list()
