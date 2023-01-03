@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-12-21
-    @version: 2.1.7
-    @update: fix parser disorder issue
+    @latest modification: 2023-1-3
+    @version: 2.1.8
+    @update: ignore macro function
 """
 
 import glob
@@ -158,17 +158,6 @@ class PreProcessor(CommonParser):
             self.param_list = list()
             self.value = None           # string representing the value of macro
 
-    # def get_macro_func(self):
-    #     """
-    #     Parse the #define clause and get the macro function dictionary
-    #     """
-    #     for i, lines in enumerate(self.intermediate_h_files):
-    #         lines = self.intermediate_h_files[i]
-    #         items = re.findall(r'#define\s+(\w+)\(([\w\s,]+)\)\b(.*)\n', lines)
-    #         # remember to strip \w\s
-    #         if items:
-    #             print(items)
-
     def pre_process(self):
         self.h_files = self.sort_h_files(self.h_files)
         for h_file in self.h_files:
@@ -206,8 +195,11 @@ class PreProcessor(CommonParser):
                             self.macro_dict[item[0]] = value
                         else:
                             logging.warning(f"Unable to parse macro, {item[0]}\n")
-                    # TODO: macro function
                     except Exception:
+                        if val.startswith('('):
+                            # macro function
+                            pass
+                        else:
                             traceback.print_exc()
                             logging.warning(f'Unable to parse macro; {item[0]}')
                             continue
@@ -1048,7 +1040,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
     """
     def __init__(self):
         logging.basicConfig(filename='debug.log',
-                            format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s',
+                            format='%(asctime)s %(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s',
                             datefmt='%d-%M-%Y %H:%M:%S')
         FunctionParser.__init__(self)
         TypeDefParser.__init__(self)
