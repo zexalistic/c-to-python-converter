@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-1-3
-    @version: 2.1.8
-    @update: ignore macro function
+    @latest modification: 2023-2-21
+    @version: 2.1.9
+    @update: fix exception dict bug
 """
 
 import glob
@@ -116,6 +116,7 @@ class CommonParser:
         """
         if self.exception_dict.__contains__(arg_type):
             arg_type = self.exception_dict[arg_type]
+            arg_ptr_flag = False
         elif self.basic_type_dict.__contains__(arg_type):
             arg_ptr_flag = self.basic_type_dict[arg_type].is_ptr or arg_ptr_flag
             arg_type = self.basic_type_dict[arg_type].base_type
@@ -459,9 +460,11 @@ class StructUnionParser(PreProcessor):
                     ttype = self._Type(name=struct_pointer_name, base_type=struct_name, is_ptr=True)
                     self.struct_union_type_dict[struct_pointer_name] = ttype            # store struct pointer
                 struct.struct_name = struct_name
-                struct_infos = content[0].split(';')
-                self.parse_struct_member_info(struct, struct_infos)
-                # self.check_typedef_struct(struct, lines)
+                if self.exception_dict.__contains__(struct_name):
+                    continue
+                else:
+                    struct_infos = content[0].split(';')
+                    self.parse_struct_member_info(struct, struct_infos)
 
             structs = re.findall(r'struct\s*([\w]+)\s*{([^}]+)?}\s*;', lines)  # match: struct _a{};
             struct_flags = [False] * len(structs)
@@ -474,8 +477,11 @@ class StructUnionParser(PreProcessor):
                 struct.isUnion = flag
                 struct_name = re.sub(r'\s', '', content[0])
                 struct.struct_name = struct_name
-                struct_infos = content[1].split(';')
-                self.parse_struct_member_info(struct, struct_infos)
+                if self.exception_dict.__contains__(struct_name):
+                    continue
+                else:
+                    struct_infos = content[1].split(';')
+                    self.parse_struct_member_info(struct, struct_infos)
 
     def sort_structs(self):
         sorted_queue = deque()
@@ -553,8 +559,7 @@ class StructUnionParser(PreProcessor):
                     # This is not an array
                     pass
 
-                if struct.struct_name not in self.exception_list:
-                    struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
+                struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
 
                 if struct_type in self.enum_class_name_list:
                     struct_type = 'c_long'
@@ -886,6 +891,9 @@ class FunctionParser(PreProcessor):
                     elif 'CFUNCTYPE' in arg_type:
                         arg_types.append(arg_type)
                         fp.write(f'    :param {arg_name}: a function pointer\n')
+                    elif self.exception_dict.__contains__(arg_type):
+                        arg_types.append(self.exception_dict[arg_type])
+                        fp.write(f'    :param {arg_name}: argument type {self.exception_dict[arg_type]}\n')
                     else:
                         if param.arg_pointer_flag and arg_type != 'c_void_p':
                             arg_types.append(f'POINTER({arg_type})')
