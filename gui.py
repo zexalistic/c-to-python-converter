@@ -4,14 +4,14 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2022-12-16
-    @version: 2.1.3
-    @update: update button
+    @latest modification: 2023-05-03
+    @version: 2.1.10
+    @update: add vcxproj import
 """
 import PySimpleGUI as sg
 import json
 from parse import Parser
-import sys
+import xml.dom.minidom
 
 
 def import_json(config_json: str, config: dict):
@@ -24,9 +24,40 @@ def import_json(config_json: str, config: dict):
     config["is_multiple_file"] = env.get('is_multiple_file', False)
 
 
+def parse_xml(xml_name: str, yes_no: str):
+    """
+    @Param xml_name: name of xml file
+    @Param yes_no: Yes for debug, No for release
+    """
+    DOMTree = xml.dom.minidom.parse(xml_name)
+    collection = DOMTree.documentElement
+    item_defs = collection.getElementsByTagName("ItemDefinitionGroup")
+    condition_dict = {'Yes': 'Debug', 'No': 'Release'}
+
+    for item_def in item_defs:
+        if len(item_def.attributes):
+            # let's assume there is only one condition tag in
+            # <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+            # If there are more, we need to change the code here.
+            # We check debug and release
+            condition_tag = item_def.attributes.items()[0]
+            if condition_dict[yes_no] in condition_tag[1]:
+                pre_def = item_def.getElementsByTagName('PreprocessorDefinitions')[0]
+                pre_def_str_list = pre_def.firstChild.nodeValue.split(';')
+                pre_def_str_list.pop()  # The last one is %(PreprocessorDefinitions)
+                for pre_def in pre_def_str_list:
+                    if '=' in pre_def:
+                        macro_key = pre_def.split('=')[0]
+                        macro_value = pre_def.split('=')[1]
+                    else:
+                        macro_key = pre_def
+                        macro_value = ''
+                    config["predefined_macro_dict"].update({macro_key: macro_value})
+
+
 def make_window(theme):
     sg.theme(theme)
-    menu_def = [['&File', ['&Import settings from config.json', '&Export settings as config.json', '&Exit']],
+    menu_def = [['&File', ['&Save settings as config.json', '&Import settings from vcxproj', '&Exit']],
                 ['&Help', ['&About', '&user guide']]]
     right_click_menu_def = [[], ['Versions', 'Exit']]
 
@@ -124,14 +155,15 @@ if __name__ == '__main__':
             break
         elif event == 'About':
             sg.popup(txt_about, keep_on_top=True)
-        elif event == 'Import settings from config.json':
-            config_json = sg.popup_get_file('Import settings from config.json', keep_on_top=True)
-            import_json(config_json, config)
-        elif event == 'Export settings as config.json':
-            config_json = sg.popup_get_file('Export settings as config.json', keep_on_top=True)
-            with open(config_json, 'w') as fp:
+        elif event == 'Save settings as config.json':
+            with open('config.json', 'w') as fp:
                 json.dump(config, fp, indent=4)
-            sg.popup("Export successfully.", keep_on_top=True)
+        elif event == 'Import settings from vcxproj':
+            xml_name = sg.popup_get_file('Select vcxproj file', keep_on_top=True)
+            yes_no = sg.popup_yes_no('For "Debug" settings in project click yes, for "Release" settings in project click no', keep_on_top=True)
+            parse_xml(xml_name, yes_no)
+            window['-macro keys-'].update(config["predefined_macro_dict"].keys())
+            window['-macro values-'].update(config["predefined_macro_dict"].values())
         elif event == 'user guide':
             sg.popup(txt_user_guide, keep_on_top=True)
         elif event == 'Convert':
