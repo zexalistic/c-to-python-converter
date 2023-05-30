@@ -7,8 +7,11 @@ When the number of class is tremendous, we need this tool to do it automatically
 
 *ctypes* is a standard python library which is used to call C codes. 
 The C code is firstly compiled as a dynamic library(*.dll), and then is imported as a python class. 
-Users are able to call the C functions from that class. 
-For details, please refer to below websites.
+Users are able to call the C functions from that class. The exported APIs are prefixed with "__declspec(dllexport)",
+which can be used as an identity for parsing.
+
+
+For reference,
 
 Python Ctypes document:
 https://docs.python.org/3/library/ctypes.html
@@ -19,32 +22,34 @@ https://www.cnblogs.com/night-ride-depart/p/4907613.html
 ### How to use
 1. Run gui.py using python 3
 2. add files and folders which contain the files you want to convert
+
    ![add_file](img/add_file.png)
 3. For the macros or global variables that are not declared in the attached header files,
 but you still want them to be defined in your result, add them in macro and var menu.
+
    ![macro](img/macro.png)
 4. Click convert and get results in output folder
+
    ![convert](img/convert.png)
 5. Check errors in debug.log.
 
   
 
 ### What this tool can do
-+ Parsing C comment
++ Ignoring comments
 + Parsing typedef clause and getting our customized variable types
 + Parsing Array, Enum, Structure, Union
 + Parsing function pointer
 + Sorting the converted APIs and classes according to the order of calling, so that the file is executable
-+ Getting the header files' dependency
 + Parsing macros and replace them (* macro functions can not be parsed)
 + Parsing preprocessing clause, such as #ifdef, #if etc.
-+ Searching the header files in project folder automatically
++ Parsing header files in the order that they are called in C compilers 
 
 
 ### Limitation 
 + **void** is not available in python. They are all regarded as **int**.
-   
 + Redundant parenthesis may affect the parsing result, e.g. ((x)) may have a different parsing result with x
++ Unable to parse functions in C files.
 
 ### File structure
 + <span id="output">**output**</span>:

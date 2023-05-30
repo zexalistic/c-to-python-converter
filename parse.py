@@ -1,14 +1,15 @@
 """
-    @usage: automatically generate Cpython wrapper file according to header files
+    @usage: automatically generate Cpython wrappers from header files
     @date: 2021-03-05
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-2-21
-    @version: 2.1.9
-    @update: fix exception dict bug
+    @latest modification: 2023-5-30
+    @version: 2.1.12
+    @update: update sorting algorithm, parsing C and h files together with topo sorting
 """
-
+import copy
+import copyreg
 import glob
 import os
 import re
@@ -52,6 +53,18 @@ def rm_miscellenous(lines: str) -> str:
     lines = re.sub(r'\s+\[', '[', lines)
 
     return lines
+
+
+def unique_list(file_list: list) -> list:
+    """
+    Although using set to eliminate repeated files is convenient, the result of set is disordered.
+    Thus, we manually compare and remove repeated files.
+    """
+    tmp_file_list = []
+    for file in file_list:
+        if file not in tmp_file_list:
+            tmp_file_list.append(file)
+    return tmp_file_list
 
 
 class CommonParser:
@@ -150,6 +163,12 @@ class PreProcessor(CommonParser):
         # C operator dictionary in #if clause
         self.c_operator_dict = {'&&': ' and ', '||': ' or ', 'defined': ''}
 
+        self.fully_visited_list = list()
+        self.visited_list = list()
+        self.node_list = self._NodeList()
+        self.detected_loop = False
+        self.squeezed_flag = False
+
     class _MacroFunc:
         """
         Class containing information of a macro function
@@ -159,13 +178,204 @@ class PreProcessor(CommonParser):
             self.param_list = list()
             self.value = None           # string representing the value of macro
 
+    class _Node:
+        """
+        Class used in topological sorting
+        """
+        def __init__(self, item):
+            self.in_nodes = list()
+            self.out_nodes = list()
+            self.item = item        # name of header file, string or list
+
+    class _NodeList:
+        """
+        The topography of node
+        """
+        def __init__(self):
+            self.nodes = list()
+            self.node_items = list()
+
+        def __getitem__(self, idx):
+            return self.nodes[idx]
+
+        def __iter__(self):
+            self.current_index = 0
+            return self
+
+        def __next__(self):
+            if self.current_index == len(self.nodes):
+                raise StopIteration
+            else:
+                result = self.nodes[self.current_index]
+                self.current_index += 1
+                return result
+
+        def get_node_by_name(self, name: str):
+            for node in self.nodes:
+                if node.item == name:
+                    return node
+            return None
+
     def pre_process(self):
-        self.h_files = self.sort_h_files(self.h_files)
+        self.h_files = self.sort_h_files()
         for h_file in self.h_files:
             with open(h_file, 'r') as fp:
                 lines = fp.read()
                 lines = rm_miscellenous(lines)
                 self.intermediate_h_files.append(lines)
+
+    def topo_sort(self):
+        sorted_list = list()
+        while self.node_list.nodes:
+            zero_in_node = None
+            for node in self.node_list:
+                if not node.in_nodes:
+                    zero_in_node = node
+                    break
+            if zero_in_node:
+                self.node_list.nodes.remove(zero_in_node)
+                if isinstance(zero_in_node.item, str):
+                    sorted_list.append(zero_in_node.item)
+                else:   # is list
+                    sorted_list.extend(zero_in_node.item)
+                for node in self.node_list.nodes:
+                    if zero_in_node in node.in_nodes:
+                        node.in_nodes.remove(zero_in_node)
+            else:
+                logging.error("topography has loop!!!")
+                break
+
+        return sorted_list
+
+    def fill_in_node_list(self, include_list: list):
+        if include_list:
+            prev_node = None
+            for include_item in include_list:
+                if include_item not in self.node_list.node_items:
+                    node = self._Node(include_item)
+                    self.node_list.nodes.append(node)
+                    self.node_list.node_items.append(include_item)
+                else:
+                    node = self.node_list.get_node_by_name(include_item)
+
+                if prev_node and prev_node is not node and node not in prev_node.out_nodes:
+                    prev_node.out_nodes.append(node)
+                prev_node = node
+
+    def generate_node_graph(self, file_list: list, is_h_file: bool):
+        quick_table = [os.path.basename(h_file) for h_file in self.h_files]
+
+        for file in file_list:
+            with open(file, 'r') as fp:
+                lines = fp.read()
+                lines = rm_miscellenous(lines)
+                include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
+                include_list = [self.h_files[quick_table.index(os.path.basename(i))] for i in include_list if os.path.basename(i) in quick_table]
+                if is_h_file:
+                    include_list.append(file)
+                self.fill_in_node_list(include_list)
+
+    def sort_h_files(self) -> list:
+        """
+        Before we sort the header files in DFS, we need to pre-sort the header files according to their including
+        order in C files. A corresponding header file is sometimes not explicitly called in header files, whereas
+        they are called in a C file before including that header file. In that case, we need to parse the C files
+        and get the order of "#include" and guide our sorting of header files.
+        Since C files are not part of our input, we only parse the C files in target folder and same folder level of target h files.
+        Then we need to consider the #include order in header files.
+        Finally, we will do the topographical sorting and get the correct order of calling header files.
+
+        """
+        # Step1: generate node graph
+        self.generate_node_graph(self.h_files, is_h_file=True)
+        self.generate_node_graph(self.c_files, is_h_file=False)
+
+        for node in self.node_list.nodes:
+            for out_node in node.out_nodes:
+                out_node.in_nodes.append(node)
+
+        # Step2: remove loop, and then squeeze them into one node
+        while self.node_list.nodes:
+            node = self.node_list.nodes[0]
+            self.dfs_node(node)
+            if self.detected_loop:     # There is a loop
+                self.node_list.nodes = self.visited_list + self.node_list.nodes
+                self.visited_list = list()
+                self.detected_loop = False
+                self.squeezed_flag = False
+
+        self.node_list.nodes = self.fully_visited_list
+
+        # Step3: topo sort
+        return self.topo_sort()
+
+    @staticmethod
+    def update_node_list(squeezed_node: _Node, loop_node_list: list, in_out_node_list: list) -> list:
+        new_in_out_node_list = [in_node for in_node in in_out_node_list if in_node not in loop_node_list]
+        if len(in_out_node_list) != len(new_in_out_node_list):
+            new_in_out_node_list.append(squeezed_node)
+
+        return new_in_out_node_list
+
+    def squeeze_into_one_node(self, loop_node_list: list):
+        in_nodes = list()
+        out_nodes = list()
+        items = list()
+        for node in loop_node_list:
+            in_nodes = in_nodes + [in_node for in_node in node.in_nodes if in_node not in loop_node_list]
+            out_nodes = out_nodes + [out_node for out_node in node.out_nodes if out_node not in loop_node_list]
+            if isinstance(node.item, str):
+                items.append(node.item)
+            else:       # is a list
+                items.extend(node.item)
+            self.visited_list.remove(node)
+
+        squeezed_node = self._Node(items)
+        squeezed_node.in_nodes = unique_list(in_nodes)
+        squeezed_node.out_nodes = unique_list(out_nodes)
+
+        # replace node in loop node list with the squeezed node
+        for node in self.node_list.nodes:
+            node.in_nodes = self.update_node_list(squeezed_node, loop_node_list, node.in_nodes)
+            node.out_nodes = self.update_node_list(squeezed_node, loop_node_list, node.out_nodes)
+        for node in self.visited_list:
+            node.in_nodes = self.update_node_list(squeezed_node, loop_node_list, node.in_nodes)  # This line is critical
+            node.out_nodes = self.update_node_list(squeezed_node, loop_node_list, node.out_nodes)
+        for node in self.fully_visited_list:
+            node.in_nodes = self.update_node_list(squeezed_node, loop_node_list, node.in_nodes)
+
+        self.node_list.nodes.append(squeezed_node)
+
+    def dfs_node(self, node: _Node):
+        if self.squeezed_flag:
+            return None
+
+        if not self.detected_loop:
+            self.visited_list.append(node)
+            self.node_list.nodes.remove(node)
+
+        for out_node in node.out_nodes:
+            if out_node in self.visited_list and not self.detected_loop:
+                self.detected_loop = True
+                return [out_node, node]                 # only returning [out_node] causes bug
+            elif out_node in self.node_list.nodes and not self.squeezed_flag:   # in untouched list
+                ret = self.dfs_node(out_node)
+                if not ret:
+                    continue
+                if ret[0] == node:
+                    self.squeeze_into_one_node(ret)
+                    self.squeezed_flag = True
+                    return None
+                else:
+                    return ret + [node]
+            else:   # node in fully visited list or in a traceback process
+                continue
+
+        if not self.detected_loop:
+            self.fully_visited_list.append(node)
+            self.visited_list.remove(node)
+
+        return None
 
     def parse_macro(self, lines: str):
         """
@@ -195,14 +405,16 @@ class PreProcessor(CommonParser):
                         if isinstance(value, int) or isinstance(value, float):
                             self.macro_dict[item[0]] = value
                         else:
-                            logging.warning(f"Unable to parse macro, {item[0]}\n")
+                            # logging.warning(f"Unable to parse macro, {item[0]}\n")
+                            pass
                     except Exception:
                         if val.startswith('('):
                             # macro function
                             pass
                         else:
                             traceback.print_exc()
-                            logging.warning(f'Unable to parse macro; {item[0]}')
+                            # logging.warning(f'Unable to parse macro; {item[0]}')
+                            pass
                             continue
 
     def check_macro(self):
@@ -290,35 +502,6 @@ class PreProcessor(CommonParser):
                     new_lines += code_block
 
             self.intermediate_h_files[i] = new_lines
-
-    def sort_h_files(self, h_files: list) -> list:
-        sorted_queue = deque()
-        quick_table = [os.path.basename(h_file) for h_file in h_files]
-
-        for idx, h_file in enumerate(h_files):
-            sorted_queue = self.sort_h_files_dfs(h_file, h_files, sorted_queue, quick_table)
-
-        sorted_queue = list(sorted_queue)
-        unique_queue = list(set(sorted_queue))
-        unique_queue.sort(key=sorted_queue.index)
-        return unique_queue
-
-    def sort_h_files_dfs(self, h_file: str, h_files: list, sorted_queue: deque, quick_table: list):
-        include_list = list()
-        with open(h_file, 'r') as fp:
-            lines = fp.read()
-            lines = rm_miscellenous(lines)
-            include_list = re.findall(r'#include\s+["<](\w+.h)[">]\s*', lines)
-
-        sorted_queue.appendleft(h_file)
-        for include_item in include_list:
-            if os.path.basename(include_item) in quick_table:
-                for item in h_files:
-                    if item.endswith(include_item):
-                        sorted_queue.appendleft(item)
-                        sorted_queue = self.sort_h_files_dfs(item, h_files, sorted_queue, quick_table)
-
-        return sorted_queue
 
     def replace_macro(self, lines: str) -> str:
         """
@@ -810,35 +993,6 @@ class FunctionParser(PreProcessor):
                 func.header_file = os.path.basename(h_file)[:-2]
                 self.func_list.append(func)
 
-    def generate_func_list_from_c_files(self):
-        """
-        parse all the C files in c_file list
-        get all the functions to be wrapped.
-        save those function information(name, argument type, return type) in func_list
-        """
-        for c_file in self.c_files:
-            with open(c_file) as fp:
-                contents = fp.read()
-                contents = rm_miscellenous(contents)
-                contents = self.replace_macro(contents)
-                # This pattern matching rule may have bugs in other cases
-                contents = re.findall(r'([*\w]+) ([\w]+)\s*\(([^;)]+)\)?\s*{', contents)  # find all functions
-                for content in contents:
-                    if content[0] == 'else':           # remove else if clause
-                        continue
-                    if content[1] not in self.func_name_list:
-                        self.func_name_list.append(content[1])
-                    else:
-                        continue
-                    func = self._Func()
-                    ret_type = content[0]
-                    func.ret_type, ret_ptr_flag = self.convert_to_ctypes(ret_type, False)           # Ignore the case that return value is a pointer
-                    if func.ret_type in self.enum_class_name_list:
-                        func.ret_type = 'c_int'
-                    func.parameters = self.parse_func_parameters(content[2])
-                    func.header_file = os.path.basename(c_file)[:-2]
-                    self.func_list.append(func)
-
     def write_funcs_to_wrapper(self):
         """
         Generate main.py
@@ -1058,10 +1212,18 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         Main function when you use this parser
         """
         h_files_to_parse = self.env.get('header_files', list())
+        dir_paths = list()
         for file_path in h_files_to_parse:
             file_paths = glob.glob(file_path)
             file_paths = [os.path.relpath(p, os.getcwd()) for p in file_paths]
             self.h_files.extend(file_paths)
+            if os.path.dirname(file_path) not in dir_paths:
+                dir_paths.append(os.path.dirname(file_path))
+
+        for dir_path in dir_paths:
+            for f in os.listdir(dir_path):
+                if f.endswith('.c'):
+                    self.c_files.append(os.path.join(dir_path, f))
 
         project_folders = self.env.get('project_folders', list())
         for project_folder in project_folders:
@@ -1070,14 +1232,12 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
                     if file.endswith('.h'):
                         file_path = os.path.join(root, file)
                         self.h_files.append(os.path.relpath(file_path, os.getcwd()))
+                    elif file.endswith('.c'):
+                        file_path = os.path.join(root, file)
+                        self.c_files.append(os.path.relpath(file_path, os.getcwd()))
 
-        # Although using set to eliminate repeated files is convenient, the result of set is disordered.
-        # Thus, we manually compare and remove repeated files.
-        tmp_file_list = []
-        for file in self.h_files:
-            if file not in tmp_file_list:
-                tmp_file_list.append(file)
-        self.h_files = tmp_file_list
+        self.h_files = unique_list(self.h_files)
+        self.c_files = unique_list(self.c_files)
 
         self.pre_process()
 
@@ -1143,7 +1303,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
 
 
 if __name__ == '__main__':
-    #logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
+    # logging.basicConfig(format='%(levelname)s! File: %(filename)s Line %(lineno)d; Msg: %(message)s', datefmt='%d-%M-%Y %H:%M:%S')
 
     parser = Parser()
     parser()
