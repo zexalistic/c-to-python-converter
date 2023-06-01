@@ -762,6 +762,9 @@ class StructUnionParser(PreProcessor):
         generate struct_class.py
         """
         with open(os.path.join('output', 'structure_class.py'), 'w') as fp:
+            fp.write('"""\n')
+            fp.write('\t@usage: Conversion result of Structure and Union type\n')
+            fp.write('"""\n')
             fp.write('from ctypes import *\n\n\n')
             for struct in self.struct_class_list:
                 if struct.isUnion:
@@ -885,7 +888,10 @@ class EnumParser(PreProcessor):
         generate struct_class.py
         """
         with open(os.path.join('output', 'enum_class.py'), 'w') as f:
-            f.write('from enum import Enum, unique, IntEnum\n\n')
+            f.write('"""\n')
+            f.write('\t@usage: Conversion result of Enumeration type\n')
+            f.write('"""\n')
+            f.write('from enum import Enum, unique, IntEnum\n\n\n')
             for enum in self.enum_class_list:
                 # f.write(f'class {enum.enum_name}(IntEnum):\n')
                 f.write(f'@unique\nclass {enum.enum_name}(IntEnum):\n')
@@ -905,7 +911,6 @@ class FunctionParser(PreProcessor):
         self.wrapper = "python_API.py"                                      # Name of Output wrapper
         self.dll_path = "api.dll"
         self.testcase = "testcases.py"                                      # Output testcase
-        self.is_multiple_file = self.env.get('is_multiple_file', False)
 
     class _Func:
         """
@@ -998,26 +1003,14 @@ class FunctionParser(PreProcessor):
         Generate main.py
         """
         wrapper_name = os.path.join('output', self.wrapper)
-        if self.is_multiple_file:
-            try:
-                os.mkdir('FunctionLib')
-            except FileExistsError:
-                logging.warning('Already exist FunctionLib// ... Now cleaning and rewrite the folder')
-                shutil.rmtree('FunctionLib')
-                os.mkdir('FunctionLib')
-        else:
-            with open(wrapper_name, 'w') as fp:
-                fp.write('from structure_class import *\n\n')
-                fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n\n')
+        with open(wrapper_name, 'w') as fp:
+            fp.write('"""\n')
+            fp.write('\t@usage: Conversion result of API\n')
+            fp.write('"""\n')
+            fp.write('from structure_class import *\n\n')
+            fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n\n')
 
         for func in self.func_list:
-            if self.is_multiple_file:
-                self.wrapper = os.path.join('FunctionLib', func.header_file + '_' + wrapper_name)
-                if not os.path.exists(self.wrapper):
-                    with open(self.wrapper, 'w') as fp:
-                        fp.write('from structure_class import *\n\n')
-                        fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n')
-
             with open(wrapper_name, 'a') as fp:
                 arg_names = func.get_arg_names()
                 fp.write(f'def {func.func_name}({arg_names}):\n')
@@ -1080,6 +1073,10 @@ class FunctionParser(PreProcessor):
         self.write_testcase_header()
 
         with open(self.testcase, 'a') as fp:
+            fp.write('"""\n')
+            fp.write('\t@usage: testcase template\n')
+            fp.write('"""\n')
+            fp.write('from structure_class import *\n\n')
             for func in self.func_list:
                 arg_names = list()
                 logging_infos = list()
@@ -1189,6 +1186,10 @@ class ArrayParser(PreProcessor):
     def write_arr_into_py(self):
         if self.array_list:
             with open(os.path.join('output', 'c_arrays.py'), 'w') as fp:
+                fp.write('"""\n')
+                fp.write('\t@usage: Conversion result of Arrays\n')
+                fp.write('"""\n')
+                fp.write('from structure_class import *\n\n')
                 for arr in self.array_list:
                     arr_idc = '*'.join(arr.arr_idc)
                     fp.write(f'# Array size: {arr_idc}\n')
@@ -1268,6 +1269,8 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         Write the parsing result to file
         """
+        if not os.path.exists('output'):
+            os.mkdir('output')
         self.write_enum_class_into_py()
         self.write_structure_class_into_py()
         self.write_arr_into_py()

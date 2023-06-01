@@ -8,20 +8,12 @@
     @version: 2.1.11
     @update: update gui
 """
+import os.path
+
 import PySimpleGUI as sg
 import json
 from parse import Parser
 import xml.dom.minidom
-
-
-def import_json(config_json: str, config: dict):
-    with open(config_json, 'r') as fp:
-        env = json.load(fp)
-    config["exception_dict"].update(env.get('exception_dict', dict()))
-    config["header_files"].extend(env.get('header_files', list()))
-    config["predefined_macro_dict"].update(env.get('predefined_macro_dict', dict()))
-    config["project_folders"].extend(env.get('project_folders', list()))
-    config["is_multiple_file"] = env.get('is_multiple_file', False)
 
 
 def parse_xml(xml_name: str, yes_no: str):
@@ -106,22 +98,13 @@ def make_window(theme):
 
 
 txt_about = \
-    'This project converts C APIs to python classes, which enables programmers to use and test the C APIs in python.\n\
-The basic idea is to parse variable types, functions, and their corresponding parameters from header files, \
-and rewrite them as python *ctypes* classes. \
-When the number of class is tremendous, we need this tool to do it automatically.\n\
-ctypes is a standard python library which is used to call C codes. \
-The C code is firstly compiled as a dynamic library(*.dll), and then is imported as a python class. \
-Users are able to call the C functions from that class. \
-For details, please refer to below websites.\n\
-Python Ctypes document:\n\
-https://docs.python.org/3/library/ctypes.html\n\
-This blog introduces how to use python ctypes:\n\
-https://www.cnblogs.com/night-ride-depart/p/4907613.html\n'
+    'email: lyihao@marvell.com\n'
 
 txt_user_guide = "1. Add files or folders to convert\n" \
                  "2. Click Convert Button\n" \
                  "3. Check the log and results in the output folder\n"
+
+blank_config = {"header_files": [], "project_folders": [], "exception_dict": {}, "predefined_macro_dict": {"NULL": "0"}}
 
 
 def dict_to_list(macro_dict: dict):
@@ -139,8 +122,13 @@ def dict_to_list(macro_dict: dict):
 
 if __name__ == '__main__':
     config = dict()
-    with open('config.json', 'r') as fp:    # load previous configuration
-        config = json.load(fp)
+    if os.path.exists('config.json'):
+        with open('config.json', 'r') as fp:    # load previous configuration
+            config = json.load(fp)
+    else:
+        config = blank_config
+        with open('config.json', 'w') as fp:
+            json.dump(config, fp, indent=4)
 
     window = make_window(sg.theme("TealMono"))
     # The four lines below are for bug removing
