@@ -1,0 +1,2 @@
+C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.exe
+C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.dll

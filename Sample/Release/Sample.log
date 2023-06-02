@@ -1,0 +1,9 @@
+﻿  main.c
+     Creating library C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.lib and object C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.exp
+  Generating code
+  0 of 5 functions ( 0.0%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    0 functions had inline decision re-evaluated but remain unchanged
+  Finished generating code
+  Sample.vcxproj -> C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.dll
+C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\Microsoft.Common.CurrentVersion.targets(5438,5): warning MSB3061: Unable to delete file "C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.exe". Access to the path 'C:\Users\lyihao\Desktop\misc\Sample\Release\Sample.exe' is denied.

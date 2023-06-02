@@ -4,12 +4,11 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-05-09
-    @version: 2.1.11
+    @latest modification: 2023-06-03
+    @version: 2.1.13
     @update: update gui
 """
-import os.path
-
+import os
 import PySimpleGUI as sg
 import json
 from parse import Parser
@@ -55,19 +54,20 @@ def make_window(theme):
     right_click_menu_def = [[], ['Versions', 'Exit']]
 
     settings_layout = [
+        [sg.T('dll name:'), sg.Input(default_text=config["dll_path"], size=(80, 1), key='dll_path')],
         [sg.Text("Files and folders to convert")],
         [sg.Listbox(values=config["header_files"] + config["project_folders"],
-                    size=(50, 5),
+                    size=(80, 5),
                     key='-files and folders-',
                     expand_x=True,
                     enable_events=True)],
-        [sg.Button("Add Folder"), sg.Button("Add File"), sg.Button("Delete"), sg.Button("Clear")],
-        [sg.ProgressBar(100, orientation='h', size=(20, 20), key='-PROGRESS BAR-'), sg.Button('Convert', button_color=('black', 'white'))]]
+        [sg.Button("Add Folder"), sg.Button("Add File"), sg.Button("Delete"),
+         sg.Button("Clear"), sg.Button('Convert', button_color=('green', 'white'))]]
 
     advance1_layout = [
             [sg.Text("Preprocessor definitions:")],
             [sg.Listbox(values=config["predefined_macro_dict"].keys(),
-                        size=(50, 5),
+                        size=(80, 5),
                         key='-macro keys-',
                         expand_x=False,
                         enable_events=True)],
@@ -76,7 +76,7 @@ def make_window(theme):
     advance2_layout = [
             [sg.Text("Manually set the parsing result of variable:")],
             [sg.Listbox(values=config["exception_dict"].keys(),
-                        size=(50, 5),
+                        size=(80, 5),
                         key='-skipped keys-',
                         expand_x=False,
                         enable_events=True)],
@@ -104,7 +104,7 @@ txt_user_guide = "1. Add files or folders to convert\n" \
                  "2. Click Convert Button\n" \
                  "3. Check the log and results in the output folder\n"
 
-blank_config = {"header_files": [], "project_folders": [], "exception_dict": {}, "predefined_macro_dict": {"NULL": "0"}}
+blank_config = {"header_files": [], "project_folders": [], "exception_dict": {}, "predefined_macro_dict": {"NULL": "0"}, "dll_path": "Sample.dll"}
 
 
 def dict_to_list(macro_dict: dict):
@@ -125,6 +125,8 @@ if __name__ == '__main__':
     if os.path.exists('config.json'):
         with open('config.json', 'r') as fp:    # load previous configuration
             config = json.load(fp)
+        if not config.__contains__("dll_path"):
+            config["dll_path"] = 'Sample.dll'
     else:
         config = blank_config
         with open('config.json', 'w') as fp:
@@ -153,7 +155,6 @@ if __name__ == '__main__':
         elif event == 'user guide':
             sg.popup(txt_user_guide, keep_on_top=True)
         elif event == 'Convert':
-            progress_bar = window['-PROGRESS BAR-']
             parser = Parser()
             parser.env = config
             parser()
@@ -212,7 +213,7 @@ if __name__ == '__main__':
             config["predefined_macro_dict"] = dict()
             window['-macro keys-'].update(dict_to_list(config["predefined_macro_dict"]))
         elif event == 'Versions':
-            sg.popup_scrolled(f'Version=2.1.2', keep_on_top=True, non_blocking=True)
+            sg.popup_scrolled(f'Version=2.1.13', keep_on_top=True, non_blocking=True)
 
     window.close()
     exit(0)

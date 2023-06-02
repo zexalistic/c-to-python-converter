@@ -7,6 +7,9 @@ Meanwhile, the parameters' types and customized types(from typedef clause) are a
 This procedure is tedious and time-consuming when the amount of API is large. 
 Thus, I create this tool to automatically do this job.
 
+Below is its workflow.
+![add_file](img/workflow.png)
+
 
 ### Limitation 
 + **This tool only finds and parses header files**. All the definition of APIs and variables must be declared in a header file,
@@ -18,6 +21,7 @@ and the implementation of API must be in a C file.
 + **void** is not available in python. They are all regarded as **int**.
 + We only regard "__declspec(dllexport)" as the prefix for APIs to export, according to VC++ document. 
 If you are not operating on Windows dll, please contact author and add the prefix.
++ gui.exe is generated from python 3.9 32bit, thus it only accepts x86 dll. For x64 dll, run gui.py on 64bit python.
 
 
 ### Prerequisite 
@@ -46,7 +50,7 @@ but you still want them to be defined in your result, add them in macro and var 
 + Parsing macros and replace them, except for macro like functions. 
 + Parsing preprocessing clause, such as #ifdef, #if etc.
 + Parsing header files in the order that they are called in C compilers 
-+ + Sorting the converted APIs and classes according to the order of calling
++ Sorting the converted APIs and classes according to the order of calling
 
 
 ### Future work

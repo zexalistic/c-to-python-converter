@@ -4,19 +4,16 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-5-30
-    @version: 2.1.12
-    @update: update sorting algorithm, parsing C and h files together with topo sorting
+    @latest modification: 2023-06-02
+    @version: 2.1.13
+    @update: update gui
 """
-import copy
-import copyreg
 import glob
 import os
 import re
 import logging
 import traceback
 import json
-import shutil
 from collections import deque
 
 
@@ -91,6 +88,7 @@ class CommonParser:
         self.exception_dict = self.env.get('exception_dict', dict())
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())   # key: str, item: list of parameters
         self.macro_dict = self.env.get('predefined_macro_dict', dict())
+        self.dll_path = self.env.get('dll_path', 'Sample.dll')
 
     class _Param:
         """
@@ -763,7 +761,7 @@ class StructUnionParser(PreProcessor):
         """
         with open(os.path.join('output', 'structure_class.py'), 'w') as fp:
             fp.write('"""\n')
-            fp.write('\t@usage: Conversion result of Structure and Union type\n')
+            fp.write('    @usage: Conversion result of Structure and Union type\n')
             fp.write('"""\n')
             fp.write('from ctypes import *\n\n\n')
             for struct in self.struct_class_list:
@@ -889,7 +887,7 @@ class EnumParser(PreProcessor):
         """
         with open(os.path.join('output', 'enum_class.py'), 'w') as f:
             f.write('"""\n')
-            f.write('\t@usage: Conversion result of Enumeration type\n')
+            f.write('    @usage: Conversion result of Enumeration type\n')
             f.write('"""\n')
             f.write('from enum import Enum, unique, IntEnum\n\n\n')
             for enum in self.enum_class_list:
@@ -909,7 +907,6 @@ class FunctionParser(PreProcessor):
         self.func_list = list()
         self.dll_name = 'APILib'                                            # Alias of the return value of CDLL
         self.wrapper = "python_API.py"                                      # Name of Output wrapper
-        self.dll_path = "api.dll"
         self.testcase = "testcases.py"                                      # Output testcase
 
     class _Func:
@@ -1005,10 +1002,10 @@ class FunctionParser(PreProcessor):
         wrapper_name = os.path.join('output', self.wrapper)
         with open(wrapper_name, 'w') as fp:
             fp.write('"""\n')
-            fp.write('\t@usage: Conversion result of API\n')
+            fp.write('    @usage: Conversion result of API\n')
             fp.write('"""\n')
-            fp.write('from structure_class import *\n\n')
-            fp.write(f'{self.dll_name} = CDLL("{self.dll_path}")\n\n\n')
+            fp.write('import os\nfrom output.structure_class import *\n\n')
+            fp.write(f'{self.dll_name} = CDLL(os.path.join(os.getcwd(), "{self.dll_path}"))\n\n\n')
 
         for func in self.func_list:
             with open(wrapper_name, 'a') as fp:
@@ -1021,7 +1018,7 @@ class FunctionParser(PreProcessor):
                 for param in func.parameters:
                     arg_type = param.arg_type
                     arg_name = param.arg_name
-                    if arg_type in self.enum_class_name_list:                   # convert customized varibale type to C type
+                    if arg_type in self.enum_class_name_list:              # convert customized variable type to C type
                         if param.arg_pointer_flag:
                             arg_types.append('POINTER(c_int)')
                             fp.write(f'    :param {arg_name}_p: A pointer of the enumerate class {arg_type}\n')
@@ -1059,6 +1056,9 @@ class FunctionParser(PreProcessor):
 
     def write_testcase_header(self):
         with open(self.testcase, 'w') as fp:
+            fp.write('"""\n')
+            fp.write('    @usage: testcase template\n')
+            fp.write('"""\n')
             fp.write('import os\nimport logging\nimport time\nimport traceback\n')
             fp.write('from output.enum_class import *\n')
             fp.write('from output.structure_class import *\n')
@@ -1073,10 +1073,6 @@ class FunctionParser(PreProcessor):
         self.write_testcase_header()
 
         with open(self.testcase, 'a') as fp:
-            fp.write('"""\n')
-            fp.write('\t@usage: testcase template\n')
-            fp.write('"""\n')
-            fp.write('from structure_class import *\n\n')
             for func in self.func_list:
                 arg_names = list()
                 logging_infos = list()
@@ -1087,14 +1083,14 @@ class FunctionParser(PreProcessor):
                     # common param
                     if arg_type == 'c_void_p':
                         pass
-                    elif arg_type in self.key_ctypes:
-                        init_param_infos.append(f'    {arg_name} = 1\n')  # maybe we could iterate/ lane ranges from 0, 1, 2, 3
-                        if param.arg_pointer_flag:
-                            init_param_infos.append(f'    {arg_name}_p = {arg_type}({arg_name})\n')
-                            logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}_p.value' + '}")\n')
-                            arg_name = arg_name + '_p'
-                        else:
-                            logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}' + '}")\n')
+                    # elif arg_type in self.key_ctypes:
+                    #     init_param_infos.append(f'    {arg_name} = 1\n')  # maybe we could iterate/ lane ranges from 0, 1, 2, 3
+                    #     if param.arg_pointer_flag:
+                    #         init_param_infos.append(f'    {arg_name}_p = {arg_type}({arg_name})\n')
+                    #         logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}_p.value' + '}")\n')
+                    #         arg_name = arg_name + '_p'
+                    #     else:
+                    #         logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}' + '}")\n')
                     elif arg_type in self.enum_class_name_list:
                         member_names = eval(arg_type).__dict__['_member_names_']
                         init_param_infos.append(f'    {arg_name} = {arg_type}.{member_names[0]}.value\n')  # maybe we could iterate
@@ -1187,7 +1183,7 @@ class ArrayParser(PreProcessor):
         if self.array_list:
             with open(os.path.join('output', 'c_arrays.py'), 'w') as fp:
                 fp.write('"""\n')
-                fp.write('\t@usage: Conversion result of Arrays\n')
+                fp.write('    @usage: Conversion result of Arrays\n')
                 fp.write('"""\n')
                 fp.write('from structure_class import *\n\n')
                 for arr in self.array_list:
