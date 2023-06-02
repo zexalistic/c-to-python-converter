@@ -42,7 +42,7 @@ the vcxproj file of your solution.
    
 4. You can also manually add/delete macros.For example, add a macro called "balabala" with its value as ""(empty).
    ![macro2](img/add_macro2.gif)
-5. Click convert and get results in output folder. Check debug.log.
+5. Click convert and get results in output folder. Check debug.log.Your setting will be automatically saved in config.json after conversion. The tool will load your settings when being reopened.
    ![convert](img/get_result.gif)
    
 6. Copy your dll file to working root folder. Run your testcase, expecting "hello world".

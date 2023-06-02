@@ -150,8 +150,9 @@ if __name__ == '__main__':
         elif event == 'Import settings from vcxproj':
             xml_name = sg.popup_get_file('Select vcxproj file', keep_on_top=True)
             yes_no = sg.popup_yes_no('For "Debug" settings in project click yes, for "Release" settings in project click no', keep_on_top=True)
-            parse_xml(xml_name, yes_no)
-            window['-macro keys-'].update(dict_to_list(config["predefined_macro_dict"]))
+            if xml_name:
+                parse_xml(xml_name, yes_no)
+                window['-macro keys-'].update(dict_to_list(config["predefined_macro_dict"]))
         elif event == 'user guide':
             sg.popup(txt_user_guide, keep_on_top=True)
         elif event == 'Convert':
@@ -196,10 +197,14 @@ if __name__ == '__main__':
             window['-files and folders-'].update(config["header_files"] + config["project_folders"])
         elif event == "Delete Macro":
             item_chosen = values['-macro keys-'][0]
+            if '=' in item_chosen:
+                item_chosen = item_chosen.split('=')[0].strip()
             config["predefined_macro_dict"].pop(item_chosen)
             window['-macro keys-'].update(dict_to_list(config["predefined_macro_dict"]))
         elif event == "Delete Var":
             item_chosen = values['-skipped keys-'][0]
+            if '=' in item_chosen:
+                item_chosen = item_chosen.split('=')[0].strip()
             config["exception_dict"].pop(item_chosen)
             window['-skipped keys-'].update(dict_to_list(config["exception_dict"]))
         elif event == "Clear":

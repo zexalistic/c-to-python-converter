@@ -1307,6 +1307,6 @@ if __name__ == '__main__':
     parser = Parser()
     parser()
 
-    from output.enum_class import *
-    from output.structure_class import *
-    parser.write_testcase()
+    # from output.enum_class import *
+    # from output.structure_class import *
+    # parser.write_testcase()

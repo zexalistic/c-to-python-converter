@@ -1,0 +1,1 @@
+pyinstaller.exe -F --version-file .\file_version_info.py gui.py
