@@ -1,3 +1,8 @@
+"""
+    @usage: Conversion result of Arrays
+"""
+from structure_class import *
+
 # Array size: 2*2
 arr = [
     [1 , 2],

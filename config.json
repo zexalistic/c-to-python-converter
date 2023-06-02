@@ -1,10 +1,13 @@
 {
-	"#": "==================================================Basic Settings===============================================================",
-	"is_multiple_file" : false,
-	"header_files": [],
-	"project_folders": ["prj"],
-
-	"#": "========================================Advanced Settings==============================================================================",
-	"exception_dict": {},
-	"predefined_macro_dict": {"NULL": "0"}
+    "#": "========================================Advanced Settings==============================================================================",
+    "is_multiple_file": false,
+    "header_files": [],
+    "project_folders": [
+        "C:/Users/31401/Desktop/TA/c-to-python-converter/Sample/prj"
+    ],
+    "exception_dict": {},
+    "predefined_macro_dict": {
+        "NULL": "0"
+    },
+    "dll_path": "Sample.dll"
 }

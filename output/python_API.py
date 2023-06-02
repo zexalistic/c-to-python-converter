@@ -1,6 +1,10 @@
-from structure_class import *
+"""
+    @usage: Conversion result of API
+"""
+import os
+from output.structure_class import *
 
-APILib = CDLL("api.dll")
+APILib = CDLL(os.path.join(os.getcwd(), "Sample.dll"))
 
 
 def hello_world(something):

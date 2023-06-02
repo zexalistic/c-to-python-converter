@@ -8,7 +8,7 @@ This procedure is tedious and time-consuming when the amount of API is large.
 Thus, I create this tool to automatically do this job.
 
 Below is its workflow.
-![add_file](img/workflow.png)
+![workflow](img/workflow.png)
 
 
 ### Limitation 
@@ -30,17 +30,24 @@ If you are not operating on Windows dll, please contact author and add the prefi
 
 ### How to use
 1. Run gui.py or gui.exe
+   ![open_exe](img/open_exe.gif)
 2. add files and folders which contain the files you want to convert
 
-   ![add_file](img/add_file.png)
-3. For the macros or global variables that are not declared in the attached header files,
-but you still want them to be defined in your result, add them in macro and var menu.
+   ![add_folder](img/add_folder.gif)
+   ![add_file](img/add_file.gif)
+3. Some macros are predefined in visual studio IDE. You can import those definition from 
+the vcxproj file of your solution. 
 
-   ![macro](img/macro.png)
-4. Click convert and get results in output folder
+   ![macro](img/add_macro.gif)
+   
+4. You can also manually add/delete macros.For example, add a macro called "balabala" with its value as ""(empty).
+   ![macro2](img/add_macro2.gif)
+5. Click convert and get results in output folder. Check debug.log.
+   ![convert](img/get_result.gif)
+   
+6. Copy your dll file to working root folder. Run your testcase, expecting "hello world".
+    ![hello](img/hello_world.gif)
 
-   ![convert](img/convert.png)
-5. Check errors in debug.log.
 
 ### What this tool can do
 + Ignoring comments
