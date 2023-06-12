@@ -19,9 +19,19 @@ and the implementation of API must be in a C file.
   + Single definition. #define A 0x8CUL
   + Recursive calling. #define A 0\n #define C 1\n #define B  A*(2+C)
 + **void** is not available in python. They are all regarded as **int**.
++ Nested definition of structure/union is ignored. 
+e.g. typedef struct
+{
+    union
+    {
+        int B;
+    } Params;
+} nest_structure;
+Please split it into two separate structures.
 + We only regard "__declspec(dllexport)" as the prefix for APIs to export, according to VC++ document. 
 If you are not operating on Windows dll, please contact author and add the prefix.
 + gui.exe is generated from python 3.9 32bit, thus it only accepts x86 dll. For x64 dll, run gui.py on 64bit python.
++ sizeof() basic c types is supported. sizeof() user-defined structure is not supported.
 
 
 ### Prerequisite 

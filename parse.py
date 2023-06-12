@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-06-02
-    @version: 2.1.13
-    @update: update gui
+    @latest modification: 2023-06-12
+    @version: 2.1.14
+    @update: add sizeof parser
 """
 import glob
 import os
@@ -15,6 +15,7 @@ import logging
 import traceback
 import json
 from collections import deque
+import sys
 
 
 def rm_miscellenous(lines: str) -> str:
@@ -81,6 +82,8 @@ class CommonParser:
         self.func_name_list = list()                    # names of functions in wrapper
         self.struct_union_type_dict = dict()
         self.basic_type_dict = dict()
+        self.sizeof_basic_c_type_dict_32bit = dict()
+        self.sizeof_basic_c_type_dict_64bit = dict()
 
         # Read from json
         with open('config.json', 'r') as fp:
@@ -89,6 +92,25 @@ class CommonParser:
         self.func_pointer_dict = self.env.get('func_pointer_dict', dict())   # key: str, item: list of parameters
         self.macro_dict = self.env.get('predefined_macro_dict', dict())
         self.dll_path = self.env.get('dll_path', 'Sample.dll')
+
+        # Basic C types, preload here
+        self.basic_c_type_keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+                     'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
+                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
+        self.basic_ctypes_lib_vars = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
+                           'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
+                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
+        self.sizeof_basic_c_type_32bit = [4, 1, 2, 4, 8, 1, 2, 4, 8,
+                                       8, 4, 1, 8, 4, 2, 2, 12,
+                                       4, 4, 8, 1, 1, 4, 1, 4, 4]
+
+        self.sizeof_basic_c_type_64bit = [8, 1, 2, 4, 8, 1, 2, 4, 8,
+                                        8, 8, 1, 8, 8, 2, 2, 16,
+                                       8, 4, 8, 1, 1, 1, 8, 8]
+
+        for key, sizeof_key_32, sizeof_key_64 in zip(self.basic_ctypes_lib_vars, self.sizeof_basic_c_type_32bit, self.sizeof_basic_c_type_64bit):
+            self.sizeof_basic_c_type_dict_32bit[key] = str(sizeof_key_32)
+            self.sizeof_basic_c_type_dict_64bit[key] = str(sizeof_key_64)
 
     class _Param:
         """
@@ -166,6 +188,31 @@ class PreProcessor(CommonParser):
         self.node_list = self._NodeList()
         self.detected_loop = False
         self.squeezed_flag = False
+
+        if sys.maxsize > 2 ** 32:
+            self.PLATFORM_BIT_SCALER = 2 # 64 bit
+        else:
+            self.PLATFORM_BIT_SCALER = 1 # 32 bit
+
+    def parse_sizeof_basic_type(self, lines: str) -> str:
+        contents = re.findall(r'sizeof\(([\w\s*]+)\)', lines)
+        for content in contents:
+            content = content.strip()
+            if '*' in content or content in self.enum_class_name_list:  # is a pointer
+                lines = lines.replace(f'sizeof({content})', f'{4 * self.PLATFORM_BIT_SCALER}')
+            elif self.basic_type_dict.__contains__(content):
+                if self.basic_type_dict[content].is_ptr:    # is a pointer
+                    lines = lines.replace(f'sizeof({content})', f'{4 * self.PLATFORM_BIT_SCALER}')
+                else:
+                    arg_type = self.basic_type_dict[content].base_type
+                    if self.PLATFORM_BIT_SCALER == 1:   # 32bit
+                        lines = re.sub(f'sizeof\({content}\)', self.sizeof_basic_c_type_dict_32bit[arg_type], lines)
+                    else:   # 64 bit
+                        lines = re.sub(f'sizeof\({content}\)', self.sizeof_basic_c_type_dict_64bit[arg_type], lines)
+            else:
+                pass            # for structure and others, to do
+
+        return lines
 
     class _MacroFunc:
         """
@@ -391,7 +438,7 @@ class PreProcessor(CommonParser):
                     if isinstance(value, int) or isinstance(value, float):
                         self.macro_dict[item[0]] = value
                     else:
-                        logging.error(f"Error in parsing macro {item[0]}\n")
+                        # logging.error(f"Error in parsing macro {item[0]}\n")
                         continue
                 except Exception:
                     for m, v in self.macro_dict.items():
@@ -522,13 +569,6 @@ class TypeDefParser(PreProcessor):
         self.c_type_map_tree = dict()               # Depth = 3, level 1 is root, level 2 is basic C types, level 3 is lists of customized C types
         self.base_struct_union_types_list = list()
 
-        # Basic C types, preload here
-        self.basic_c_type_keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
-                     'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
-                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
-        self.basic_ctypes_lib_vars = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
-                           'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
-                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
         self.init_basic_type_dict()
 
     def init_basic_type_dict(self):
@@ -1083,14 +1123,14 @@ class FunctionParser(PreProcessor):
                     # common param
                     if arg_type == 'c_void_p':
                         pass
-                    # elif arg_type in self.key_ctypes:
-                    #     init_param_infos.append(f'    {arg_name} = 1\n')  # maybe we could iterate/ lane ranges from 0, 1, 2, 3
-                    #     if param.arg_pointer_flag:
-                    #         init_param_infos.append(f'    {arg_name}_p = {arg_type}({arg_name})\n')
-                    #         logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}_p.value' + '}")\n')
-                    #         arg_name = arg_name + '_p'
-                    #     else:
-                    #         logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}' + '}")\n')
+                    elif arg_type in self.basic_ctypes_lib_vars:
+                        init_param_infos.append(f'    {arg_name} = 1\n')  # maybe we could iterate/ lane ranges from 0, 1, 2, 3
+                        if param.arg_pointer_flag:
+                            init_param_infos.append(f'    {arg_name}_p = {arg_type}({arg_name})\n')
+                            logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}_p.value' + '}")\n')
+                            arg_name = arg_name + '_p'
+                        else:
+                            logging_infos.append(f'    logging.debug(f"{arg_name}' + ' = {' + f'{arg_name}' + '}")\n')
                     elif arg_type in self.enum_class_name_list:
                         member_names = eval(arg_type).__dict__['_member_names_']
                         init_param_infos.append(f'    {arg_name} = {arg_type}.{member_names[0]}.value\n')  # maybe we could iterate
@@ -1250,6 +1290,9 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
         """
         Parse the header files
         """
+        for i, lines in enumerate(self.intermediate_h_files):
+            lines = self.parse_sizeof_basic_type(lines)
+            self.intermediate_h_files[i] = lines
         self.check_macro()
         self.generate_typedef_mapping_dict()
         self.generate_enum_class_list()
@@ -1307,6 +1350,6 @@ if __name__ == '__main__':
     parser = Parser()
     parser()
 
-    # from output.enum_class import *
-    # from output.structure_class import *
-    # parser.write_testcase()
+    from output.enum_class import *
+    from output.structure_class import *
+    parser.write_testcase()
