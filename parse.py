@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2023-06-12
-    @version: 2.1.14
-    @update: add sizeof parser
+    @latest modification: 2024-04-09
+    @version: 2.1.15
+    @update: fix bug in structure parser when there is an array in member
 """
 import glob
 import os
@@ -637,27 +637,64 @@ class StructUnionParser(PreProcessor):
     def parse_struct_member_info(self, struct: _Struct, struct_infos: list):
         for struct_info in struct_infos:
             struct_info = struct_info.strip()  # This is necessary
-            tmp = re.findall(r'([\[\]*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
-            if tmp:  # filter the empty list
-                member_type = tmp[0][0].strip()
-                member_name = tmp[0][1].strip()
-                # find the pointer, this part only support 1st order pointer
-                if member_type.endswith('*'):
-                    struct.struct_types.append(member_type[:-1].strip())
-                    struct.struct_members.append(member_name)
-                    struct.pointer_flags.append(True)
-                elif member_name.endswith('[]'):
-                    struct.struct_types.append(member_type)
-                    struct.struct_members.append(member_name[:-2].strip())
-                    struct.pointer_flags.append(True)
-                elif member_name.startswith('*'):
-                    struct.struct_types.append(member_type)
-                    struct.struct_members.append(member_name[1:].strip())
-                    struct.pointer_flags.append(True)
+
+            member_type = 'ERROR'
+            member_name = 'ERROR'
+            idx = 0
+            # check if structure member is an array
+            if '][' in struct_info:    # high order array, I assuem there's no space between brackets
+                expressions = re.findall(r'\[([\w\s*/+\-()]+)?]', struct_info)
+                idx = 1
+                for expr in expressions:
+                    try:
+                        idx = idx * int(eval(expr))
+                    except Exception:
+                        traceback.print_exc()
+                        logging.error(f'Unrecognized macro: {expr}.. {struct.struct_name}')
+                if re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()]+)?]', struct_info):  # support +-/*
+                    member_type, member_name, _ = re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()]+)?]', struct_info).groups()
+                elif re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()\w]+)?]', struct_info):  # There is a macro within array index
+                    member_type, member_name, _ = re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()\w]+)?]', struct_info).groups()
                 else:
-                    struct.struct_types.append(member_type)
-                    struct.struct_members.append(member_name)
-                    struct.pointer_flags.append(False)
+                    logging.error(f'Error parsing {struct.struct_name}')
+
+            elif '[' in struct_info:  # 1 order array
+                if re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()]+)?]', struct_info):  # support +-/*
+                    member_type, member_name, idx = re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()]+)?]', struct_info).groups()
+                elif re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()\w]+)?]', struct_info):  # There is a macro within array index
+                    member_type, member_name, idx = re.search(r'([*\w\s]+)\s+([*\w\s]+)\[([\s*/\-+\d()\w]+)?]', struct_info).groups()
+                else:
+                    logging.error(f'Error parsing {struct.struct_name}')
+                try:
+                    idx = int(eval(idx))
+                except Exception:
+                    traceback.print_exc()
+                    logging.error(f'Unrecognized macro: {idx}... {struct.struct_name}')
+            else:
+                tmp = re.findall(r'([*\w\s]+)\s+([^;}]+)', struct_info)  # parse the members of structure
+                if tmp:  # filter errors
+                    member_type = tmp[0][0]
+                    member_name = tmp[0][1]
+                else:
+                    logging.warning(f'Please check {struct.struct_name}')
+                    continue        # empty
+
+            member_name = member_name.strip()
+            member_type = member_type.strip()
+            struct.member_idc.append(idx)
+            if member_type.endswith('*'):
+                struct.struct_types.append(member_type[:-1])
+                struct.struct_members.append(member_name)
+                struct.pointer_flags.append(True)
+            elif member_name.startswith('*'):
+                struct.struct_types.append(member_type)
+                struct.struct_members.append(member_name[1:])
+                struct.pointer_flags.append(True)
+            else:
+                struct.struct_types.append(member_type)
+                struct.struct_members.append(member_name)
+                struct.pointer_flags.append(False)
+
         self.struct_class_list.append(struct)
         self.struct_class_name_list.append(struct.struct_name)
 
@@ -752,40 +789,11 @@ class StructUnionParser(PreProcessor):
             updated_struct_members = list()
             updated_struct_types = list()
             for member, struct_type, pointer_flag in zip(struct.struct_members, struct.struct_types, struct.pointer_flags):
-                idx = 0
-                # check if member is array
-                if '][' in member:    # high order array
-                    expressions = re.findall(r'\[([\w\s*/+\-()]+)?]', member)
-                    idx = 1
-                    member = re.search(r'(\w+)\[.*]', member).group(1)
-                    for expr in expressions:
-                        try:
-                            idx = idx * int(eval(expr))
-                        except Exception:
-                            traceback.print_exc()
-                            logging.error(f'Unrecognized macro: {expr}.. {struct.struct_name}')
-
-                elif '[' in member:  # 1 order array
-                    if re.search(r'\w+\[([\s*/\-+\d()]+)]', member):  # support +-/*
-                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()]+)]', member).groups()
-                    elif re.search(r'\w+\[([\s*/\-+\d\w]+)]', member):  # There is a macro within array index
-                        member, idx = re.search(r'(\w+)\[([\s*/\-+\d()\w]+)]', member).groups()
-                    try:
-                        idx = int(eval(idx))
-                    except Exception:
-                        traceback.print_exc()
-                        logging.error(f'Unrecognized macro: {idx}... {struct.struct_name}')
-
-                else:
-                    # This is not an array
-                    pass
-
                 struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
 
                 if struct_type in self.enum_class_name_list:
                     struct_type = 'c_long'
 
-                struct.member_idc.append(idx)
                 updated_struct_members.append(member)
                 updated_struct_types.append(struct_type)
             struct.struct_types = updated_struct_types
