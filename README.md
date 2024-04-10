@@ -18,7 +18,7 @@ and the implementation of API must be in a C file.
 + Function like macros are ignored, e.g. \#define MAX(a, b) ( (a) > (b) (a) : (b) ). Simple macros as below will be parsed.
   + Single definition. #define A 0x8CUL
   + Recursive calling. #define A 0\n #define C 1\n #define B  A*(2+C)
-+ **void** is not available in python. They are all regarded as **int**.
++ **void** is not available in python. They are all regarded as **None**.
 + Nested definition of structure/union is ignored. 
 e.g. typedef struct
 {
@@ -72,8 +72,6 @@ the vcxproj file of your solution.
 
 ### Future work
 
-+ POINTER(void) substituted as c_void_p
-
 + Add debugging info about which file it belongs to.
 
 + Add the comment of function before the API
@@ -84,7 +82,9 @@ the vcxproj file of your solution.
 
 + Recover file structure of the C project
 
++ back slack \ at the end of each line (preprocessor)
+
 
 ### About author
-
-email: lyihao@marvell.com
+Author: Yihao Liu
+email: to.gnu.is.not.unix@gmail.com

@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2024-04-09
-    @version: 2.1.15
-    @update: fix bug in structure parser when there is an array in member
+    @latest modification: 2024-04-10
+    @version: 2.1.16
+    @update: fix bug in function pointer and c_void_p
 """
 import glob
 import os
@@ -153,6 +153,9 @@ class CommonParser:
         elif self.basic_type_dict.__contains__(arg_type):
             arg_ptr_flag = self.basic_type_dict[arg_type].is_ptr or arg_ptr_flag
             arg_type = self.basic_type_dict[arg_type].base_type
+            if arg_type == 'None' and arg_ptr_flag:
+                arg_type = 'c_void_p'
+                arg_ptr_flag = False
         elif arg_type in self.enum_class_name_list:
             pass
         elif arg_type in self.struct_class_name_list:
@@ -164,9 +167,10 @@ class CommonParser:
             arg_type = f"CFUNCTYPE({', '.join(self.func_pointer_dict[arg_type])})"
             arg_ptr_flag = True
         else:
-            logging.warning(f'Unrecognized type! Type name: {arg_type}.')
-            if debug_info:
-                logging.warning(f'File: {debug_info.filename}, Line: {debug_info.line_number}')
+            if self.struct_class_name_list:         # if structure and union were parsed
+                logging.warning(f'Unrecognized type! Type name: {arg_type}.')
+            # if debug_info:
+            #     logging.warning(f'File: {debug_info.filename}, Line: {debug_info.line_number}')
 
         return arg_type, arg_ptr_flag
 
@@ -190,9 +194,9 @@ class PreProcessor(CommonParser):
         self.squeezed_flag = False
 
         if sys.maxsize > 2 ** 32:
-            self.PLATFORM_BIT_SCALER = 2 # 64 bit
+            self.PLATFORM_BIT_SCALER = 2    # 64 bit
         else:
-            self.PLATFORM_BIT_SCALER = 1 # 32 bit
+            self.PLATFORM_BIT_SCALER = 1    # 32 bit
 
     def parse_sizeof_basic_type(self, lines: str) -> str:
         contents = re.findall(r'sizeof\(([\w\s*]+)\)', lines)
@@ -575,7 +579,7 @@ class TypeDefParser(PreProcessor):
         for key, key_ctype in zip(self.basic_c_type_keys, self.basic_ctypes_lib_vars):
             ttype = self._Type(name=key, base_type=key_ctype, is_ptr=False)
             self.basic_type_dict.setdefault(key, ttype)
-        ttype = self._Type(name='void', base_type='c_int', is_ptr=False)
+        ttype = self._Type(name='void', base_type='None', is_ptr=False)
         self.basic_type_dict.setdefault('void', ttype)
         ttype = self._Type(name='bool', base_type='c_bool', is_ptr=False)
         self.basic_type_dict.setdefault('bool', ttype)
@@ -587,28 +591,30 @@ class TypeDefParser(PreProcessor):
         Generate basic type dict from header files
         """
         for lines in self.intermediate_h_files:
-            contents = re.findall(r'typedef\s+([\w\s*]+)\s+(\w+);', lines)
+            contents = re.findall(r'typedef\s+([\w\s*]+)\s+([*\w]+);', lines)
             for content in contents:
-                original_type = content[0]
+                original_type = content[0].strip()
                 customized_type = content[1]
                 ttype = self._Type(name=customized_type, base_type=original_type, is_ptr=False)
                 if '*' in original_type:
                     original_type = original_type.strip('*')
+                    ttype.is_ptr = True
+                if '*' in customized_type:
+                    customized_type = customized_type.strip('*')
                     ttype.is_ptr = True
 
                 if 'struct' in original_type or 'union' in original_type:
                     original_type = re.sub(r'\bstruct\b', '', original_type)
                     original_type = re.sub(r'\bunion\b', '', original_type)
                     ttype.base_type = original_type.strip()
-                original_type = original_type.strip()
-                if original_type in self.basic_type_dict.keys():        # parse basic c types
+                    self.struct_union_type_dict[customized_type] = ttype
+                elif original_type in self.basic_type_dict.keys():        # parse basic c types
                     ttype.base_type = self.basic_type_dict[original_type].base_type
                     ttype.is_ptr = ttype.is_ptr or self.basic_type_dict[original_type].is_ptr
                     self.basic_type_dict[customized_type] = ttype
-                else:                                                   # parse struct/union typedef
-                    if original_type in self.struct_union_type_dict.keys():
-                        ttype.base_type = self.struct_union_type_dict[original_type].base_type
-                        ttype.is_ptr = ttype.is_ptr or self.struct_union_type_dict[original_type].is_ptr
+                elif original_type in self.struct_union_type_dict.keys():         # parse struct/union typedef
+                    ttype.base_type = self.struct_union_type_dict[original_type].base_type
+                    ttype.is_ptr = ttype.is_ptr or self.struct_union_type_dict[original_type].is_ptr
                     self.struct_union_type_dict[customized_type] = ttype
 
 
@@ -756,8 +762,8 @@ class StructUnionParser(PreProcessor):
     def sort_structs_dfs(self, item: _Struct, sorted_queue: deque):
         sorted_queue.appendleft(item)
         for struct_type in item.struct_types:
-            struct_type = re.sub(r'^POINTER\(', '', struct_type)  # Remove POINTER decoration
-            struct_type = re.sub(r'\)$', '', struct_type)  # Remove POINTER decoration
+            struct_type = re.sub(r'^POINTER\(', '', struct_type)  # Remove POINTER decoration, only keep the base type of structure member
+            struct_type = re.sub(r'\)$', '', struct_type)         # Remove POINTER decoration, only keep the base type of structure member
             if struct_type in self.struct_class_name_list:
                 idx = self.struct_class_name_list.index(struct_type)
                 dependent_struct = self.struct_class_list[idx]
@@ -788,6 +794,7 @@ class StructUnionParser(PreProcessor):
         for i, struct in enumerate(self.struct_class_list):
             updated_struct_members = list()
             updated_struct_types = list()
+            updated_struct_pointer_flags = list()
             for member, struct_type, pointer_flag in zip(struct.struct_members, struct.struct_types, struct.pointer_flags):
                 struct_type, pointer_flag = self.convert_to_ctypes(struct_type, pointer_flag)
 
@@ -796,8 +803,10 @@ class StructUnionParser(PreProcessor):
 
                 updated_struct_members.append(member)
                 updated_struct_types.append(struct_type)
+                updated_struct_pointer_flags.append(pointer_flag)
             struct.struct_types = updated_struct_types
             struct.struct_members = updated_struct_members
+            struct.pointer_flags = updated_struct_pointer_flags
             updated_struct_list.append(struct)
 
         # Sort the structure class
@@ -1358,6 +1367,6 @@ if __name__ == '__main__':
     parser = Parser()
     parser()
 
-    from output.enum_class import *
-    from output.structure_class import *
-    parser.write_testcase()
+    # from output.enum_class import *
+    # from output.structure_class import *
+    # parser.write_testcase()
