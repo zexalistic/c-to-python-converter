@@ -4,9 +4,9 @@
     @author: Yihao Liu
     @email: lyihao@marvell.com
     @python: 3.7
-    @latest modification: 2024-04-10
-    @version: 2.1.16
-    @update: fix bug in function pointer and c_void_p
+    @latest modification: 2024-04-11
+    @version: 2.1.17
+    @update: fix bug in parsing hex
 """
 import glob
 import os
@@ -40,7 +40,7 @@ def rm_miscellenous(lines: str) -> str:
     """
     remove ornamental keywords such as auto, volatile, static etc.
     """
-    redundant_keyword_list = ['const', 'signed', 'auto', 'volatile', 'static', 'inline']
+    redundant_keyword_list = ['const', 'signed', 'auto', 'volatile', 'static', 'inline', '__iomem']
 
     for key in redundant_keyword_list:
         lines = re.sub(r'\b{}\b'.format(key), '', lines)
@@ -96,10 +96,10 @@ class CommonParser:
         # Basic C types, preload here
         self.basic_c_type_keys = ['int', 'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
                      'long long', 'long', 'wchar_t', 'unsigned long long', 'unsigned long', 'short', 'unsigned short', 'long double',
-                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t']
+                     'unsigned int', 'float', 'double', 'char', 'unsigned char', '_Bool', 'size_t', 'ssize_t', 'resource_size_t']
         self.basic_ctypes_lib_vars = ['c_int', 'c_int8', 'c_int16', 'c_int32', 'c_int64', 'c_uint8', 'c_uint16', 'c_uint32', 'c_uint64',
                            'c_longlong', 'c_long', 'c_wchar', 'c_ulonglong', 'c_ulong', 'c_short', 'c_ushort', 'c_longdouble',
-                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t']
+                           'c_uint', 'c_float', 'c_double', 'c_char', 'c_ubyte', 'c_bool', 'c_size_t', 'c_ssize_t', 'c_size_t']
         self.sizeof_basic_c_type_32bit = [4, 1, 2, 4, 8, 1, 2, 4, 8,
                                        8, 4, 1, 8, 4, 2, 2, 12,
                                        4, 4, 8, 1, 1, 4, 1, 4, 4]
@@ -448,7 +448,7 @@ class PreProcessor(CommonParser):
                     for m, v in self.macro_dict.items():
                         val = re.sub(r'\b{}\b'.format(m), '{}'.format(v), val)
                     val = re.sub(r'\b(\d+)[uUlL]+\b', r'\1', val)
-                    val = re.sub(r'\b(0x[\dA-F]+)[uUlL]+\b', r'\1', val)
+                    val = re.sub(r'\b(0x[\da-fA-F]+)[uUlL]+\b', r'\1', val)
                     try:
                         value = eval(val)
                         if isinstance(value, int) or isinstance(value, float):
@@ -689,12 +689,12 @@ class StructUnionParser(PreProcessor):
             member_type = member_type.strip()
             struct.member_idc.append(idx)
             if member_type.endswith('*'):
-                struct.struct_types.append(member_type[:-1])
+                struct.struct_types.append(member_type[:-1].strip())
                 struct.struct_members.append(member_name)
                 struct.pointer_flags.append(True)
             elif member_name.startswith('*'):
                 struct.struct_types.append(member_type)
-                struct.struct_members.append(member_name[1:])
+                struct.struct_members.append(member_name[1:].strip())
                 struct.pointer_flags.append(True)
             else:
                 struct.struct_types.append(member_type)
@@ -895,7 +895,7 @@ class EnumParser(PreProcessor):
                     for m, v in self.macro_dict.items():
                         enum_value = re.sub(r'\b{}\b'.format(m), '{}'.format(v), enum_value)
                     enum_value = re.sub(r'\b(\d+)[uUlL]+\b', r'\1', enum_value)
-                    enum_value = re.sub(r'\b(0x[\dA-F]+)[uUlL]+\b', r'\1', enum_value)
+                    enum_value = re.sub(r'\b(0x[\da-fA-F]+)[uUlL]+\b', r'\1', enum_value)
                     try:
                         value = eval(enum_value)
                         if isinstance(value, int) or isinstance(value, float):
@@ -1334,7 +1334,7 @@ class Parser(TypeDefParser, StructUnionParser, EnumParser, FunctionParser, Array
     def generate_func_ptr_dict(self):
         # parse header files
         for lines in self.intermediate_h_files:
-            lines = re.findall(r'typedef\s+(\w+)\s*\(\*([\w]+)\)\s*\((.*?)\)\s*;', lines, re.S)
+            lines = re.findall(r'typedef\s+(\w+)\s*\(\*\s*([\w]+)\s*\)\s*\((.*?)\)\s*;', lines, re.S)
             for content in lines:            # For each function pointer
                 val = list()
                 ret_type = content[0]
